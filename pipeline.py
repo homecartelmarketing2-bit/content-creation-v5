@@ -13,12 +13,16 @@
 #    Phase 9   →  Closeup Photo One Video
 #    Phase 10  →  Closeup Photo Two Video
 #    Phase 11  →  Combine Closeup Videos (Closeup1 + Closeup2 + After Reels)
+#    Phase 12  →  CTA (Blended Image + "SHOP NOW" overlay)
+#    Phase 13  →  Polls and Slider (LLM-generated A/B poll, rendered by nano-banana)
 # =====================================================================
 
 from config.prompts import (
     MOODBOARD_PROMPT, BEFORE_REELS_PROMPT, AFTER_REELS_PROMPT,
-    CLOSEUP_PROMPT_TEMPLATE, CLOSEUP_VIDEO_PROMPT,
+    CLOSEUP_PROMPT_TEMPLATE, CLOSEUP_VIDEO_PROMPT, MUSIC_PROMPT,
+    POLL_IMAGE_PROMPT_TEMPLATE,
 )
+from config.settings import SHOP_NOW_TEXT
 
 from services.airtable import (
     get_next_unfinished_row,
@@ -26,25 +30,26 @@ from services.airtable import (
     update_status,
     update_field,
     update_attachment,
+    upload_attachment_file,
 )
 from services.kie import (
     create_image_task, create_blend_task, create_video_task,
     create_music_task, poll_task_status
 )
 from services.zoho import upload_from_url, upload_and_get_public_link
-from services.vision_llm import get_random_local_photo, generate_prompt
+from services.vision_llm import get_random_local_photo, generate_prompt, generate_poll
 from services.pinterest_scraper import ensure_marketing_photos
 from services.video import download, combine, add_audio_to_video, cleanup_temp_files
+from services.image_overlay import make_shop_now_image
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
 def _apply_music(video_path: str, record_id: str, label: str) -> str:
     """Generates marketing music via Suno and applies it to the video."""
-    prompt = "Upbeat corporate pop, modern electronic beats, inspiring, motivational, background music for marketing reel"
     print(f"[INFO] Generating background music for {label}...")
-    
-    music_task = create_music_task(prompt)
+
+    music_task = create_music_task(MUSIC_PROMPT)
     if not music_task:
         print(f"[WARN] Failed to create music task for {label}. Skipping audio.")
         return video_path
@@ -281,8 +286,15 @@ def _phase3_moodboard(table_id: str, record_id: str, ui_callback=None) -> None:
 
 def _phase_video(table_id: str, record_id: str,
                  source_field: str, target_field: str,
-                 prompt: str, zoho_folder: str, label: str, ui_callback=None) -> None:
-    """Generic video-from-image phase (used for Before & After Reels)."""
+                 prompt: str, zoho_folder: str, label: str,
+                 apply_music: bool = True,
+                 ui_callback=None) -> None:
+    """Generic video-from-image phase (used for Before & After Reels).
+
+    When `apply_music` is False the raw Kling video is uploaded as-is
+    (no Suno track). Music is intentionally skipped for the per-item
+    closeup videos so it can be applied later on the combined cut.
+    """
     fields = refetch_record(table_id, record_id)
     source = fields.get(source_field)
     existing = fields.get(target_field)
@@ -308,13 +320,16 @@ def _phase_video(table_id: str, record_id: str,
         update_status(table_id, record_id, f"Error - {label} Generation Failed")
         return
 
-    # Download video to apply music
+    # Download video (and optionally apply music)
     temp_video = download(video_url, f"{record_id}_{label.lower().replace(' ', '_')}_raw.mp4")
     if temp_video:
-        # Apply music
-        final_video_path = _apply_music(temp_video, record_id, label)
-        
-        # Upload final video with music to Zoho and get public link for Airtable
+        if apply_music:
+            final_video_path = _apply_music(temp_video, record_id, label)
+        else:
+            print(f"[INFO] Skipping background music for {label} (silent video).")
+            final_video_path = temp_video
+
+        # Upload final video to Zoho and get public link for Airtable
         final_url = upload_and_get_public_link(final_video_path, zoho_folder)
         if final_url:
             update_attachment(table_id, record_id, target_field, final_url)
@@ -484,6 +499,170 @@ def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> 
                        final_combined_path if final_combined_path != combined_path else None)
 
 
+# ── Phase 12: CTA ───────────────────────────────────────────
+
+def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
+    """Phase 12: Stamp 'SHOP NOW' on the Blended Image and attach as 'CTA'."""
+    fields = refetch_record(table_id, record_id)
+    blended = fields.get("Blended Image")
+    existing = fields.get("CTA")
+
+    if existing:
+        print("[INFO] CTA already populated. Skipping Phase 12.")
+        return
+    if not blended:
+        print("[WARN] No Blended Image found. Cannot generate CTA.")
+        return
+
+    blended_url = blended[0]["url"]
+    print(f"[INFO] Generating CTA image (text='{SHOP_NOW_TEXT}')...")
+    if ui_callback:
+        ui_callback(
+            "⏳ Phase 12: Adding SHOP NOW...",
+            desc_text="Drawing the SHOP NOW label onto the Blended Image...",
+        )
+
+    blended_path = download(blended_url, f"{record_id}_blended_for_cta.png")
+    if not blended_path:
+        print("[WARN] Could not download Blended Image. Skipping CTA.")
+        return
+
+    overlay_path = make_shop_now_image(blended_path, record_id, text=SHOP_NOW_TEXT)
+    if not overlay_path:
+        print("[WARN] SHOP NOW overlay failed. Skipping CTA.")
+        cleanup_temp_files(blended_path)
+        return
+
+    # Attach the file directly to Airtable via the content API.
+    # We can't rely on a Zoho public URL here because Zoho's share
+    # links serve an HTML viewer page rather than the binary, which
+    # Airtable cannot ingest.
+    attached = upload_attachment_file(
+        record_id, "CTA", overlay_path, content_type="image/jpeg",
+    )
+
+    # Best-effort Zoho backup so the user still has a copy in the
+    # CTA folder. Failures here are non-fatal.
+    try:
+        upload_and_get_public_link(overlay_path, folder_key="CTA")
+    except Exception as e:
+        print(f"[WARN] Zoho backup of CTA failed: {e}")
+
+    if attached:
+        print("[OK] Phase 12 (CTA) done.")
+        if ui_callback:
+            ui_callback(
+                "Phase 12: CTA Built",
+                desc_text="Final CTA image with SHOP NOW overlay uploaded to Airtable.",
+                image_path=overlay_path,
+            )
+    else:
+        print("[WARN] CTA attachment upload to Airtable failed.")
+        if ui_callback:
+            ui_callback(
+                "Phase 12: CTA Built (local only)",
+                desc_text="Overlay rendered but Airtable upload failed.",
+                image_path=overlay_path,
+            )
+
+    cleanup_temp_files(blended_path, overlay_path)
+
+
+# ── Phase 13: Polls and Slider ─────────────────────────
+
+def _phase13_poll(table_id: str, record_id: str,
+                  item1: str = "", item2: str = "",
+                  ui_callback=None) -> None:
+    """Phase 13: Generate an A/B poll graphic.
+
+    The poll copy (question + two choices) is auto-generated by the
+    LLM with text-only context (fixture combo + the row's styled-photo
+    prompt). The graphic itself is rendered by Kie.ai nano-banana-pro
+    using a fixed layout prompt with the copy substituted in.
+
+    This phase does NOT depend on the Blended Image — it can run on
+    any row that has reached the end of the pipeline.
+    """
+    fields = refetch_record(table_id, record_id)
+    if fields.get("Polls and Slider"):
+        print("[INFO] 'Polls and Slider' already populated. Skipping Phase 13.")
+        return
+
+    # Build a small text-only context for the LLM so polls vary per row.
+    style_prompt = (fields.get("Styled Photo Prompt") or "").strip()
+    context_parts = []
+    if item1 or item2:
+        pair = " + ".join(p for p in (item1, item2) if p)
+        if pair:
+            context_parts.append(f"Lighting / fixture combo: {pair}")
+    if style_prompt:
+        context_parts.append(f"Room style direction: {style_prompt}")
+    context = "\n".join(context_parts)
+
+    if ui_callback:
+        ui_callback(
+            "⏳ Phase 13: Writing poll copy...",
+            desc_text="LLM is drafting a poll question + A/B choices.",
+        )
+
+    poll = generate_poll(context)
+    if not poll:
+        print("[WARN] LLM did not return a poll. Skipping Phase 13.")
+        return
+
+    print(
+        f"[INFO] Poll copy → Q: {poll['question']!r} | "
+        f"A: {poll['choice_a']!r} | B: {poll['choice_b']!r}"
+    )
+
+    # Persist the raw poll copy as text fields so it can be reused as a
+    # social caption. These writes silently no-op if the fields don't
+    # exist in Airtable.
+    update_field(table_id, record_id, "Poll Question", poll["question"], silent=True)
+    update_field(table_id, record_id, "Poll Choice A", poll["choice_a"], silent=True)
+    update_field(table_id, record_id, "Poll Choice B", poll["choice_b"], silent=True)
+
+    # Build the nano-banana prompt (fixed layout, dynamic copy) and
+    # generate the poll image.
+    image_prompt = POLL_IMAGE_PROMPT_TEMPLATE.format(
+        question=poll["question"],
+        choice_a=poll["choice_a"],
+        choice_b=poll["choice_b"],
+    )
+
+    if ui_callback:
+        ui_callback(
+            "⏳ Phase 13: Rendering poll image...",
+            desc_text=f"nano-banana is drawing the poll graphic.\nQ: {poll['question']}",
+        )
+
+    task_id = create_image_task(image_prompt)
+    if not task_id:
+        update_status(table_id, record_id, "Error - Polls and Slider Task Failed")
+        return
+
+    poll_url = poll_task_status(task_id)
+    if not poll_url:
+        update_status(table_id, record_id, "Error - Polls and Slider Generation Failed")
+        return
+
+    # Attach to the 'Polls and Slider' Airtable attachment field +
+    # best-effort backup to Zoho.
+    update_attachment(table_id, record_id, "Polls and Slider", poll_url)
+    upload_from_url(poll_url, f"{record_id}_polls_and_slider.png", "Polls and Slider")
+    print("[OK] Phase 13 ('Polls and Slider') done.")
+
+    if ui_callback:
+        ui_callback(
+            "Phase 13: Polls and Slider Built",
+            desc_text=(
+                f"Q: {poll['question']}\n"
+                f"A: {poll['choice_a']}\n"
+                f"B: {poll['choice_b']}"
+            ),
+        )
+
+
 # ── Main Orchestrator ───────────────────────────────────────────────
 
 def process_one_row(table_id: str, blend_prompt: str,
@@ -556,26 +735,35 @@ def process_one_row(table_id: str, blend_prompt: str,
                 ui_callback=ui_callback
             )
 
-        # Phase 9: Closeup Photo One Video
+        # Phase 9: Closeup Photo One Video (silent — music applied on the combined cut)
         _phase_video(
             table_id, record_id,
             source_field="Closeup Photo One", target_field="Closeup Photo One Video",
             prompt=CLOSEUP_VIDEO_PROMPT, zoho_folder="Closeup Photo One Video",
             label="Closeup Photo One Video",
+            apply_music=False,
             ui_callback=ui_callback
         )
 
-        # Phase 10: Closeup Photo Two Video
+        # Phase 10: Closeup Photo Two Video (silent — music applied on the combined cut)
         _phase_video(
             table_id, record_id,
             source_field="Closeup Photo Two", target_field="Closeup Photo Two Video",
             prompt=CLOSEUP_VIDEO_PROMPT, zoho_folder="Closeup Photo Two Video",
             label="Closeup Photo Two Video",
+            apply_music=False,
             ui_callback=ui_callback
         )
 
         # Phase 11: Combine Closeup Videos
         _phase_combine_closeups(table_id, record_id, ui_callback)
+
+        # Phase 12: CTA (Blended Image + SHOP NOW overlay)
+        _phase12_shop_now(table_id, record_id, ui_callback)
+
+        # Phase 13: Polls and Slider (LLM-generated A/B poll, final phase)
+        _phase13_poll(table_id, record_id, item1=item1, item2=item2,
+                      ui_callback=ui_callback)
 
     # Mark complete
     update_status(table_id, record_id, "Complete")

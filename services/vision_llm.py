@@ -26,6 +26,8 @@ from config.prompts import (
     STYLE_VARIATIONS,
     MOOD_VARIATIONS,
     build_vision_user_prompt,
+    POLL_VISION_SYSTEM_PROMPT,
+    build_poll_user_prompt,
 )
 
 
@@ -164,4 +166,83 @@ def generate_prompt(image_path: str) -> str | None:
                 continue  # try next endpoint
 
     print("[ERROR] Vision LLM generation failed")
+    return None
+
+
+# ── Poll Generation (Phase 13) ──────────────────────────────────────
+
+def _extract_json_blob(raw: str) -> str | None:
+    """Pulls the first {...} JSON object out of an LLM response."""
+    if not raw:
+        return None
+    # Strip markdown code fences if present
+    fenced = re.sub(r"```(?:json)?", "", raw, flags=re.IGNORECASE).replace("```", "")
+    match = re.search(r"\{.*\}", fenced, flags=re.DOTALL)
+    return match.group(0) if match else None
+
+
+def generate_poll(context: str = "") -> dict | None:
+    """
+    Asks the LLM to produce a poll with a question + A/B choices.
+
+    This is a TEXT-ONLY call — no reference image is sent. The optional
+    ``context`` argument should be a short text description of the room,
+    lighting, or fixture combo so the poll feels relevant. Returns a
+    dict shaped like ``{"question": str, "choice_a": str, "choice_b": str}``
+    or None on failure.
+    """
+    payload = {
+        "model": VISION_LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": POLL_VISION_SYSTEM_PROMPT},
+            {"role": "user", "content": build_poll_user_prompt(context)},
+        ],
+        "max_tokens": 300,
+        "temperature": 0.9,
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    for attempt in range(3):
+        for endpoint in VISION_LLM_ENDPOINTS:
+            try:
+                resp = requests.post(
+                    endpoint, headers=headers, json=payload,
+                    timeout=VISION_LLM_TIMEOUT,
+                )
+                data = resp.json()
+                choices = data.get("choices", [])
+                if not choices:
+                    continue
+
+                raw = choices[0]["message"]["content"]
+                blob = _extract_json_blob(raw)
+                if not blob:
+                    print(f"[WARN] Poll LLM response had no JSON object: {raw[:200]}")
+                    continue
+
+                try:
+                    parsed = json.loads(blob)
+                except json.JSONDecodeError as exc:
+                    print(f"[WARN] Poll LLM JSON parse failed ({exc}): {blob[:200]}")
+                    continue
+
+                question = str(parsed.get("question", "")).strip()
+                choice_a = str(parsed.get("choice_a", "")).strip()
+                choice_b = str(parsed.get("choice_b", "")).strip()
+
+                if not (question and choice_a and choice_b):
+                    print(f"[WARN] Poll LLM returned incomplete fields: {parsed}")
+                    continue
+
+                return {
+                    "question": question,
+                    "choice_a": choice_a,
+                    "choice_b": choice_b,
+                }
+
+            except requests.RequestException:
+                continue  # try next endpoint
+
+    print("[ERROR] Poll generation via Vision LLM failed")
     return None

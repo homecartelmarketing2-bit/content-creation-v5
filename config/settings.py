@@ -73,7 +73,20 @@ ZOHO_FOLDERS = {
     "Closeup Photo One Video": "dp2c01030cd1615ee4f929299945a21767826",
     "Closeup Photo Two Video": "dp2c07273014cfd5242fc8b0aff6b5d7deaf1",
     "Combined Closeup Videos": "dp2c071305f65b3c14e7ba07da0e99ca8e15d",
+    # Final-phase outputs. Hardcoded to the user's Zoho folders; the
+    # matching env vars still override if explicitly set.
+    "CTA": os.environ.get(
+        "ZOHO_FOLDER_CTA",
+        "h8atd1190158bb68e4930be8974c9abbe88c0",
+    ),
+    "Polls and Slider": os.environ.get(
+        "ZOHO_FOLDER_POLLS_AND_SLIDER",
+        "lw5kdefb0136173624987a941419a2b7b6d54",
+    ),
 }
+
+# ── Shop Now Overlay (Phase 12) ────────────────────────────────────
+SHOP_NOW_TEXT = os.environ.get("SHOP_NOW_TEXT", "SHOP NOW")
 
 # ── Vision LLM (local LM Studio) ───────────────────────────────────
 VISION_LLM_MODEL = os.environ.get("VISION_LLM_MODEL", "zai-org/glm-4.6v-flash")
