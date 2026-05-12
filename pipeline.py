@@ -14,7 +14,7 @@
 #    Phase 10  →  Closeup Photo Two Video
 #    Phase 11  →  Combine Closeup Videos (Closeup1 + Closeup2 + After Reels)
 #    Phase 12  →  Shop Now Image (Blended Image + "SHOP NOW" overlay)
-#    Phase 13  →  Poll Image (LLM-generated A/B poll, rendered by nano-banana)
+#    Phase 13  →  Polls and Slider (LLM-generated A/B poll, rendered by nano-banana)
 # =====================================================================
 
 from config.prompts import (
@@ -556,7 +556,7 @@ def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
     cleanup_temp_files(blended_path, overlay_path)
 
 
-# ── Phase 13: Poll Image ─────────────────────────────────
+# ── Phase 13: Polls and Slider ─────────────────────────
 
 def _phase13_poll(table_id: str, record_id: str,
                   item1: str = "", item2: str = "",
@@ -572,8 +572,8 @@ def _phase13_poll(table_id: str, record_id: str,
     any row that has reached the end of the pipeline.
     """
     fields = refetch_record(table_id, record_id)
-    if fields.get("Poll Image"):
-        print("[INFO] Poll Image already exists. Skipping.")
+    if fields.get("Polls and Slider"):
+        print("[INFO] 'Polls and Slider' already populated. Skipping Phase 13.")
         return
 
     # Build a small text-only context for the LLM so polls vary per row.
@@ -626,22 +626,23 @@ def _phase13_poll(table_id: str, record_id: str,
 
     task_id = create_image_task(image_prompt)
     if not task_id:
-        update_status(table_id, record_id, "Error - Poll Image Task Failed")
+        update_status(table_id, record_id, "Error - Polls and Slider Task Failed")
         return
 
     poll_url = poll_task_status(task_id)
     if not poll_url:
-        update_status(table_id, record_id, "Error - Poll Image Generation Failed")
+        update_status(table_id, record_id, "Error - Polls and Slider Generation Failed")
         return
 
-    # Attach to Airtable + back up to Zoho (best-effort).
-    update_attachment(table_id, record_id, "Poll Image", poll_url)
-    upload_from_url(poll_url, f"{record_id}_poll.png", "Poll Image")
-    print("[OK] Phase 13 (Poll Image) done.")
+    # Attach to the 'Polls and Slider' Airtable attachment field +
+    # best-effort backup to Zoho.
+    update_attachment(table_id, record_id, "Polls and Slider", poll_url)
+    upload_from_url(poll_url, f"{record_id}_polls_and_slider.png", "Polls and Slider")
+    print("[OK] Phase 13 ('Polls and Slider') done.")
 
     if ui_callback:
         ui_callback(
-            "Phase 13: Poll Image Built",
+            "Phase 13: Polls and Slider Built",
             desc_text=(
                 f"Q: {poll['question']}\n"
                 f"A: {poll['choice_a']}\n"
@@ -748,7 +749,7 @@ def process_one_row(table_id: str, blend_prompt: str,
         # Phase 12: Shop Now Image (Blended Image + SHOP NOW overlay)
         _phase12_shop_now(table_id, record_id, ui_callback)
 
-        # Phase 13: Poll Image (LLM-generated A/B poll, final phase)
+        # Phase 13: Polls and Slider (LLM-generated A/B poll, final phase)
         _phase13_poll(table_id, record_id, item1=item1, item2=item2,
                       ui_callback=ui_callback)
 

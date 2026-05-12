@@ -76,7 +76,7 @@ ZOHO_FOLDERS = {
     # Final-phase outputs. Replace with the actual Zoho folder ids; the
     # pipeline will warn and skip the Zoho upload if these are blank.
     "Shop Now Image": os.environ.get("ZOHO_FOLDER_SHOP_NOW_IMAGE", ""),
-    "Poll Image": os.environ.get("ZOHO_FOLDER_POLL_IMAGE", ""),
+    "Polls and Slider": os.environ.get("ZOHO_FOLDER_POLLS_AND_SLIDER", ""),
 }
 
 # ── Shop Now Overlay (Phase 12) ────────────────────────────────────
