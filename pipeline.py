@@ -13,12 +13,14 @@
 #    Phase 9   →  Closeup Photo One Video
 #    Phase 10  →  Closeup Photo Two Video
 #    Phase 11  →  Combine Closeup Videos (Closeup1 + Closeup2 + After Reels)
+#    Phase 12  →  Shop Now Image (Blended Image + "SHOP NOW" overlay)
 # =====================================================================
 
 from config.prompts import (
     MOODBOARD_PROMPT, BEFORE_REELS_PROMPT, AFTER_REELS_PROMPT,
     CLOSEUP_PROMPT_TEMPLATE, CLOSEUP_VIDEO_PROMPT,
 )
+from config.settings import SHOP_NOW_TEXT
 
 from services.airtable import (
     get_next_unfinished_row,
@@ -35,6 +37,7 @@ from services.zoho import upload_from_url, upload_and_get_public_link
 from services.vision_llm import get_random_local_photo, generate_prompt
 from services.pinterest_scraper import ensure_marketing_photos
 from services.video import download, combine, add_audio_to_video, cleanup_temp_files
+from services.image_overlay import make_shop_now_image
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -484,6 +487,64 @@ def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> 
                        final_combined_path if final_combined_path != combined_path else None)
 
 
+# ── Phase 12: Shop Now Image ────────────────────────────────
+
+def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
+    """Phase 12: Stamp 'SHOP NOW' at the bottom-center of the Blended Image."""
+    fields = refetch_record(table_id, record_id)
+    blended = fields.get("Blended Image")
+    existing = fields.get("Shop Now Image")
+
+    if existing:
+        print("[INFO] Shop Now Image already exists. Skipping.")
+        return
+    if not blended:
+        print("[WARN] No Blended Image found. Cannot generate Shop Now Image.")
+        return
+
+    blended_url = blended[0]["url"]
+    print(f"[INFO] Generating Shop Now Image (text='{SHOP_NOW_TEXT}')...")
+    if ui_callback:
+        ui_callback(
+            "⏳ Phase 12: Adding SHOP NOW...",
+            desc_text="Drawing the SHOP NOW label onto the Blended Image...",
+        )
+
+    blended_path = download(blended_url, f"{record_id}_blended_for_shopnow.png")
+    if not blended_path:
+        print("[WARN] Could not download Blended Image. Skipping Shop Now Image.")
+        return
+
+    overlay_path = make_shop_now_image(blended_path, record_id, text=SHOP_NOW_TEXT)
+    if not overlay_path:
+        print("[WARN] SHOP NOW overlay failed. Skipping Shop Now Image.")
+        cleanup_temp_files(blended_path)
+        return
+
+    public_url = upload_and_get_public_link(overlay_path, folder_key="Shop Now Image")
+    if public_url:
+        update_attachment(table_id, record_id, "Shop Now Image", public_url)
+        print("[OK] Phase 12 (Shop Now Image) done.")
+        if ui_callback:
+            ui_callback(
+                "Phase 12: Shop Now Image Built",
+                desc_text="Final image with SHOP NOW overlay uploaded to Airtable.",
+                image_path=overlay_path,
+            )
+    else:
+        print("[WARN] Could not upload Shop Now Image to Zoho — "
+              "attaching local file is not possible. Configure the "
+              "'Shop Now Image' Zoho folder to enable this phase.")
+        if ui_callback:
+            ui_callback(
+                "Phase 12: Shop Now Image Built (local only)",
+                desc_text="Overlay rendered but Zoho upload failed; Airtable not updated.",
+                image_path=overlay_path,
+            )
+
+    cleanup_temp_files(blended_path, overlay_path)
+
+
 # ── Main Orchestrator ───────────────────────────────────────────────
 
 def process_one_row(table_id: str, blend_prompt: str,
@@ -576,6 +637,9 @@ def process_one_row(table_id: str, blend_prompt: str,
 
         # Phase 11: Combine Closeup Videos
         _phase_combine_closeups(table_id, record_id, ui_callback)
+
+        # Phase 12: Shop Now Image (final overlay step)
+        _phase12_shop_now(table_id, record_id, ui_callback)
 
     # Mark complete
     update_status(table_id, record_id, "Complete")
