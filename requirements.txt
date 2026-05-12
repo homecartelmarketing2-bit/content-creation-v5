@@ -1,0 +1,8 @@
+requests
+Pillow
+python-dotenv
+customtkinter
+moviepy
+playwright
+imageio
+imageio-ffmpeg
