@@ -18,7 +18,7 @@
 
 from config.prompts import (
     MOODBOARD_PROMPT, BEFORE_REELS_PROMPT, AFTER_REELS_PROMPT,
-    CLOSEUP_PROMPT_TEMPLATE, CLOSEUP_VIDEO_PROMPT,
+    CLOSEUP_PROMPT_TEMPLATE, CLOSEUP_VIDEO_PROMPT, MUSIC_PROMPT,
 )
 from config.settings import SHOP_NOW_TEXT
 
@@ -44,10 +44,9 @@ from services.image_overlay import make_shop_now_image
 
 def _apply_music(video_path: str, record_id: str, label: str) -> str:
     """Generates marketing music via Suno and applies it to the video."""
-    prompt = "Upbeat corporate pop, modern electronic beats, inspiring, motivational, background music for marketing reel"
     print(f"[INFO] Generating background music for {label}...")
-    
-    music_task = create_music_task(prompt)
+
+    music_task = create_music_task(MUSIC_PROMPT)
     if not music_task:
         print(f"[WARN] Failed to create music task for {label}. Skipping audio.")
         return video_path
@@ -284,8 +283,15 @@ def _phase3_moodboard(table_id: str, record_id: str, ui_callback=None) -> None:
 
 def _phase_video(table_id: str, record_id: str,
                  source_field: str, target_field: str,
-                 prompt: str, zoho_folder: str, label: str, ui_callback=None) -> None:
-    """Generic video-from-image phase (used for Before & After Reels)."""
+                 prompt: str, zoho_folder: str, label: str,
+                 apply_music: bool = True,
+                 ui_callback=None) -> None:
+    """Generic video-from-image phase (used for Before & After Reels).
+
+    When `apply_music` is False the raw Kling video is uploaded as-is
+    (no Suno track). Music is intentionally skipped for the per-item
+    closeup videos so it can be applied later on the combined cut.
+    """
     fields = refetch_record(table_id, record_id)
     source = fields.get(source_field)
     existing = fields.get(target_field)
@@ -311,13 +317,16 @@ def _phase_video(table_id: str, record_id: str,
         update_status(table_id, record_id, f"Error - {label} Generation Failed")
         return
 
-    # Download video to apply music
+    # Download video (and optionally apply music)
     temp_video = download(video_url, f"{record_id}_{label.lower().replace(' ', '_')}_raw.mp4")
     if temp_video:
-        # Apply music
-        final_video_path = _apply_music(temp_video, record_id, label)
-        
-        # Upload final video with music to Zoho and get public link for Airtable
+        if apply_music:
+            final_video_path = _apply_music(temp_video, record_id, label)
+        else:
+            print(f"[INFO] Skipping background music for {label} (silent video).")
+            final_video_path = temp_video
+
+        # Upload final video to Zoho and get public link for Airtable
         final_url = upload_and_get_public_link(final_video_path, zoho_folder)
         if final_url:
             update_attachment(table_id, record_id, target_field, final_url)
@@ -617,21 +626,23 @@ def process_one_row(table_id: str, blend_prompt: str,
                 ui_callback=ui_callback
             )
 
-        # Phase 9: Closeup Photo One Video
+        # Phase 9: Closeup Photo One Video (silent — music applied on the combined cut)
         _phase_video(
             table_id, record_id,
             source_field="Closeup Photo One", target_field="Closeup Photo One Video",
             prompt=CLOSEUP_VIDEO_PROMPT, zoho_folder="Closeup Photo One Video",
             label="Closeup Photo One Video",
+            apply_music=False,
             ui_callback=ui_callback
         )
 
-        # Phase 10: Closeup Photo Two Video
+        # Phase 10: Closeup Photo Two Video (silent — music applied on the combined cut)
         _phase_video(
             table_id, record_id,
             source_field="Closeup Photo Two", target_field="Closeup Photo Two Video",
             prompt=CLOSEUP_VIDEO_PROMPT, zoho_folder="Closeup Photo Two Video",
             label="Closeup Photo Two Video",
+            apply_music=False,
             ui_callback=ui_callback
         )
 

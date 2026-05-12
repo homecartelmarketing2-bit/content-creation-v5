@@ -7,6 +7,17 @@ BEFORE_REELS_PROMPT = "Slowly Rotating Around Camera Movement"
 AFTER_REELS_PROMPT = "Slowly Rotating Around Camera Movement"
 CLOSEUP_VIDEO_PROMPT = "Slowly Rotating Around Camera Movement"
 
+# ── Music Prompt (Suno) ────────────────────────────────────────────
+MUSIC_PROMPT = (
+    "Engaging warm uplifting instrumental marketing music for room "
+    "interior reels. Cinematic and aspirational lifestyle mood with "
+    "soft acoustic guitar, gentle ambient piano, smooth atmospheric "
+    "pads and light tasteful modern percussion. Sophisticated, cozy, "
+    "and contemporary — perfect for showcasing beautiful home interiors "
+    "and room transformations. Mid-tempo, smooth groove, positive and "
+    "inviting, no vocals, instrumental only."
+)
+
 # ── Closeup Photo Prompt ──────────────────────────────────────────
 CLOSEUP_PROMPT_TEMPLATE = (
     "Generate me a medium closeup photo of {item}, "
