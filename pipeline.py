@@ -13,7 +13,7 @@
 #    Phase 9   →  Closeup Photo One Video
 #    Phase 10  →  Closeup Photo Two Video
 #    Phase 11  →  Combine Closeup Videos (Closeup1 + Closeup2 + After Reels)
-#    Phase 12  →  Shop Now Image (Blended Image + "SHOP NOW" overlay)
+#    Phase 12  →  CTA (Blended Image + "SHOP NOW" overlay)
 #    Phase 13  →  Polls and Slider (LLM-generated A/B poll, rendered by nano-banana)
 # =====================================================================
 
@@ -498,57 +498,57 @@ def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> 
                        final_combined_path if final_combined_path != combined_path else None)
 
 
-# ── Phase 12: Shop Now Image ────────────────────────────────
+# ── Phase 12: CTA ───────────────────────────────────────────
 
 def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
-    """Phase 12: Stamp 'SHOP NOW' at the bottom-center of the Blended Image."""
+    """Phase 12: Stamp 'SHOP NOW' on the Blended Image and attach as 'CTA'."""
     fields = refetch_record(table_id, record_id)
     blended = fields.get("Blended Image")
-    existing = fields.get("Shop Now Image")
+    existing = fields.get("CTA")
 
     if existing:
-        print("[INFO] Shop Now Image already exists. Skipping.")
+        print("[INFO] CTA already populated. Skipping Phase 12.")
         return
     if not blended:
-        print("[WARN] No Blended Image found. Cannot generate Shop Now Image.")
+        print("[WARN] No Blended Image found. Cannot generate CTA.")
         return
 
     blended_url = blended[0]["url"]
-    print(f"[INFO] Generating Shop Now Image (text='{SHOP_NOW_TEXT}')...")
+    print(f"[INFO] Generating CTA image (text='{SHOP_NOW_TEXT}')...")
     if ui_callback:
         ui_callback(
             "⏳ Phase 12: Adding SHOP NOW...",
             desc_text="Drawing the SHOP NOW label onto the Blended Image...",
         )
 
-    blended_path = download(blended_url, f"{record_id}_blended_for_shopnow.png")
+    blended_path = download(blended_url, f"{record_id}_blended_for_cta.png")
     if not blended_path:
-        print("[WARN] Could not download Blended Image. Skipping Shop Now Image.")
+        print("[WARN] Could not download Blended Image. Skipping CTA.")
         return
 
     overlay_path = make_shop_now_image(blended_path, record_id, text=SHOP_NOW_TEXT)
     if not overlay_path:
-        print("[WARN] SHOP NOW overlay failed. Skipping Shop Now Image.")
+        print("[WARN] SHOP NOW overlay failed. Skipping CTA.")
         cleanup_temp_files(blended_path)
         return
 
-    public_url = upload_and_get_public_link(overlay_path, folder_key="Shop Now Image")
+    public_url = upload_and_get_public_link(overlay_path, folder_key="CTA")
     if public_url:
-        update_attachment(table_id, record_id, "Shop Now Image", public_url)
-        print("[OK] Phase 12 (Shop Now Image) done.")
+        update_attachment(table_id, record_id, "CTA", public_url)
+        print("[OK] Phase 12 (CTA) done.")
         if ui_callback:
             ui_callback(
-                "Phase 12: Shop Now Image Built",
-                desc_text="Final image with SHOP NOW overlay uploaded to Airtable.",
+                "Phase 12: CTA Built",
+                desc_text="Final CTA image with SHOP NOW overlay uploaded to Airtable.",
                 image_path=overlay_path,
             )
     else:
-        print("[WARN] Could not upload Shop Now Image to Zoho — "
-              "attaching local file is not possible. Configure the "
-              "'Shop Now Image' Zoho folder to enable this phase.")
+        print("[WARN] Could not upload CTA image to Zoho — attaching local "
+              "file is not possible. Configure the 'CTA' Zoho folder to "
+              "enable this phase.")
         if ui_callback:
             ui_callback(
-                "Phase 12: Shop Now Image Built (local only)",
+                "Phase 12: CTA Built (local only)",
                 desc_text="Overlay rendered but Zoho upload failed; Airtable not updated.",
                 image_path=overlay_path,
             )
@@ -746,7 +746,7 @@ def process_one_row(table_id: str, blend_prompt: str,
         # Phase 11: Combine Closeup Videos
         _phase_combine_closeups(table_id, record_id, ui_callback)
 
-        # Phase 12: Shop Now Image (Blended Image + SHOP NOW overlay)
+        # Phase 12: CTA (Blended Image + SHOP NOW overlay)
         _phase12_shop_now(table_id, record_id, ui_callback)
 
         # Phase 13: Polls and Slider (LLM-generated A/B poll, final phase)
