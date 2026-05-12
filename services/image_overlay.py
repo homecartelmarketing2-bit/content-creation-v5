@@ -153,7 +153,13 @@ def add_bottom_center_text(
 
 def make_shop_now_image(input_path: str, record_id: str,
                         text: str = "SHOP NOW") -> str | None:
-    """Convenience wrapper used by the pipeline."""
-    filename = f"{record_id}_shop_now.png"
+    """Convenience wrapper used by the pipeline.
+
+    Writes the overlay as a high-quality JPEG so the resulting file
+    stays comfortably under Airtable's 5 MB direct-upload limit (the
+    Blended Image is typically ~6 MB as PNG; the same content as JPEG
+    quality 95 is ~1 MB).
+    """
+    filename = f"{record_id}_shop_now.jpg"
     output_path = os.path.join(tempfile.gettempdir(), filename)
     return add_bottom_center_text(input_path, output_path, text=text)

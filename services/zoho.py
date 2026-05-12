@@ -194,11 +194,19 @@ def upload_and_get_public_link(filepath: str, folder_key: str = "Before and Afte
 # ── Internal Helpers ────────────────────────────────────────────────
 
 def _create_share_link(token: str, resource_id: str, filename: str) -> str | None:
-    """Creates a public download link for a Zoho resource."""
-    url = f"https://workdrive.zoho.com/api/v1/files/{resource_id}/links"
+    """Creates a public download link for a Zoho resource.
+
+    The correct WorkDrive endpoint is ``POST /api/v1/links`` with the
+    ``resource_id`` carried inside the payload. The older path
+    ``/api/v1/files/{id}/links`` returns 405 "Invalid Method" and was
+    causing every uploaded asset to fall back to a private download
+    URL that Airtable then refused to ingest.
+    """
+    url = "https://workdrive.zoho.com/api/v1/links"
     payload = {
         "data": {
             "attributes": {
+                "resource_id": resource_id,
                 "link_name": filename,
                 "request_user_data": False,
                 "allow_download": True,

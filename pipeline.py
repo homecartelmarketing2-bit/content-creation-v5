@@ -30,6 +30,7 @@ from services.airtable import (
     update_status,
     update_field,
     update_attachment,
+    upload_attachment_file,
 )
 from services.kie import (
     create_image_task, create_blend_task, create_video_task,
@@ -532,9 +533,22 @@ def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
         cleanup_temp_files(blended_path)
         return
 
-    public_url = upload_and_get_public_link(overlay_path, folder_key="CTA")
-    if public_url:
-        update_attachment(table_id, record_id, "CTA", public_url)
+    # Attach the file directly to Airtable via the content API.
+    # We can't rely on a Zoho public URL here because Zoho's share
+    # links serve an HTML viewer page rather than the binary, which
+    # Airtable cannot ingest.
+    attached = upload_attachment_file(
+        record_id, "CTA", overlay_path, content_type="image/jpeg",
+    )
+
+    # Best-effort Zoho backup so the user still has a copy in the
+    # CTA folder. Failures here are non-fatal.
+    try:
+        upload_and_get_public_link(overlay_path, folder_key="CTA")
+    except Exception as e:
+        print(f"[WARN] Zoho backup of CTA failed: {e}")
+
+    if attached:
         print("[OK] Phase 12 (CTA) done.")
         if ui_callback:
             ui_callback(
@@ -543,13 +557,11 @@ def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
                 image_path=overlay_path,
             )
     else:
-        print("[WARN] Could not upload CTA image to Zoho — attaching local "
-              "file is not possible. Configure the 'CTA' Zoho folder to "
-              "enable this phase.")
+        print("[WARN] CTA attachment upload to Airtable failed.")
         if ui_callback:
             ui_callback(
                 "Phase 12: CTA Built (local only)",
-                desc_text="Overlay rendered but Zoho upload failed; Airtable not updated.",
+                desc_text="Overlay rendered but Airtable upload failed.",
                 image_path=overlay_path,
             )
 
@@ -606,9 +618,9 @@ def _phase13_poll(table_id: str, record_id: str,
     # Persist the raw poll copy as text fields so it can be reused as a
     # social caption. These writes silently no-op if the fields don't
     # exist in Airtable.
-    update_field(table_id, record_id, "Poll Question", poll["question"])
-    update_field(table_id, record_id, "Poll Choice A", poll["choice_a"])
-    update_field(table_id, record_id, "Poll Choice B", poll["choice_b"])
+    update_field(table_id, record_id, "Poll Question", poll["question"], silent=True)
+    update_field(table_id, record_id, "Poll Choice A", poll["choice_a"], silent=True)
+    update_field(table_id, record_id, "Poll Choice B", poll["choice_b"], silent=True)
 
     # Build the nano-banana prompt (fixed layout, dynamic copy) and
     # generate the poll image.
