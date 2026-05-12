@@ -73,9 +73,10 @@ ZOHO_FOLDERS = {
     "Closeup Photo One Video": "dp2c01030cd1615ee4f929299945a21767826",
     "Closeup Photo Two Video": "dp2c07273014cfd5242fc8b0aff6b5d7deaf1",
     "Combined Closeup Videos": "dp2c071305f65b3c14e7ba07da0e99ca8e15d",
-    # Final phase output. Replace with the actual Zoho folder id; the
-    # pipeline will warn and skip the Zoho upload if this is blank.
+    # Final-phase outputs. Replace with the actual Zoho folder ids; the
+    # pipeline will warn and skip the Zoho upload if these are blank.
     "Shop Now Image": os.environ.get("ZOHO_FOLDER_SHOP_NOW_IMAGE", ""),
+    "Poll Image": os.environ.get("ZOHO_FOLDER_POLL_IMAGE", ""),
 }
 
 # ── Shop Now Overlay (Phase 12) ────────────────────────────────────

@@ -134,3 +134,110 @@ def build_vision_user_prompt(style: str, mood: str) -> str:
         f"Ensure walls, ceilings, and tables are completely bare of any lamps or fixtures. "
         f"Output ONLY the plain text sentence now."
     )
+
+
+# ── Poll Phase (Phase 13) ──────────────────────────────────────────
+# System prompt steering the LLM to emit a strict JSON object containing
+# a poll question + two short A/B answer choices. This is a text-only
+# call (no reference image is sent) — the LLM uses the lighting/room
+# context that the pipeline supplies as the user prompt.
+POLL_VISION_SYSTEM_PROMPT = (
+    "You are a social-media copywriter for an interior-design marketing brand.\n"
+    "Write a SHORT, fun, engaging poll question with exactly two answer "
+    "choices (A and B) that an Instagram / Facebook audience would enjoy "
+    "voting on.\n\n"
+    "<TOPIC_RULES>\n"
+    "- The poll must be relevant to interior design, home decor, lighting, "
+    "furniture, room ambiance, or lifestyle aesthetics.\n"
+    "- When room or fixture context is provided, the poll should feel "
+    "inspired by it (without naming specific brands or products).\n"
+    "- The two choices must be DIFFERENT, comparable, and short (1-4 words each).\n"
+    "- The question must be a complete sentence ending with a question mark.\n"
+    "- Keep the tone friendly, casual, and inviting. No hashtags. No emojis.\n"
+    "- Do NOT name specific brands, products, or people.\n"
+    "- Vary the topic between polls (lighting mood, color palette, furniture "
+    "style, atmosphere, materials, etc.) so a series of polls feels fresh.\n"
+    "</TOPIC_RULES>\n\n"
+    "<LENGTH_RULES>\n"
+    "- question: max 80 characters.\n"
+    "- choice_a: max 24 characters.\n"
+    "- choice_b: max 24 characters.\n"
+    "</LENGTH_RULES>\n\n"
+    "<OUTPUT_RULES>\n"
+    "Return ONE single JSON object on a single line with EXACTLY these keys:\n"
+    '{"question": "...", "choice_a": "...", "choice_b": "..."}\n'
+    "No preface. No explanation. No markdown fences. No trailing text.\n"
+    "</OUTPUT_RULES>"
+)
+
+
+def build_poll_user_prompt(context: str = "") -> str:
+    """Builds the per-row user prompt with optional lighting/room context."""
+    context = (context or "").strip()
+    if context:
+        return (
+            "Generate ONE interior-design poll for this context:\n"
+            f"{context}\n\n"
+            "Return ONLY the JSON object on a single line."
+        )
+    return (
+        "Generate ONE interior-design poll question and two short A/B "
+        "answer choices. Return ONLY the JSON object on a single line."
+    )
+
+# Prompt template for nano-banana-pro that renders the final poll
+# graphic. Placeholders {question} / {choice_a} / {choice_b} are filled
+# with the LLM-generated copy. The layout itself is fixed and intended
+# to match the reference poll-card design (centered dark card with two
+# pill buttons, lettered circles on the left, on a soft fabric backdrop).
+POLL_IMAGE_PROMPT_TEMPLATE = (
+    "A clean modern vertical 9:16 social-media poll graphic, "
+    "1080x1920 pixels, magazine-quality minimalist design.\n\n"
+
+    "BACKGROUND:\n"
+    "A soft, slightly-wrinkled warm off-white textile or paper surface "
+    "filling the entire frame, lit by gentle natural daylight from the "
+    "upper-left producing soft diffused shadows and a subtle, calm, "
+    "tactile texture. No props, no furniture, no fixtures, no people, "
+    "no hands.\n\n"
+
+    "CARD (centered in the middle of the frame):\n"
+    "A single rounded-corner panel with a dark charcoal-gray fill "
+    "(approx #3a3a3a), corner radius around 28px, a subtle soft drop "
+    "shadow, and generous internal padding. The card width spans about "
+    "60% of the image width and is vertically centered around the "
+    "middle of the composition. Nothing else floats outside of this card.\n\n"
+
+    "CARD CONTENT (top to bottom, with equal padding on all sides):\n"
+    "1) A bold white sans-serif question text, centered horizontally, "
+    "tight line spacing, allowed to wrap across 2-3 lines, exact "
+    "wording: \"{question}\"\n"
+    "2) A small vertical gap below the question.\n"
+    "3) Two horizontally-oriented pill-shaped buttons stacked vertically "
+    "with a small gap between them. Each pill is a light off-white "
+    "rounded rectangle (corner radius equal to half its height, so it "
+    "looks like a pill). Each pill is anchored against the left and "
+    "right inner edges of the dark card (matching the card's internal "
+    "padding).\n"
+    "4) On the LEFT side of each pill sits a solid dark charcoal-gray "
+    "circle slightly smaller than the pill height, containing a bold "
+    "white letter centered inside it: \"A\" in the top pill, \"B\" in "
+    "the bottom pill.\n"
+    "5) To the right of the circle, inside the pill, a medium dark-gray "
+    "sans-serif label is left-aligned, vertically centered.\n"
+    "   - Top pill label text (exact wording): \"{choice_a}\"\n"
+    "   - Bottom pill label text (exact wording): \"{choice_b}\"\n\n"
+
+    "STRICT REQUIREMENTS:\n"
+    "- Render the text exactly as specified, with correct spelling, "
+    "casing, and punctuation.\n"
+    "- The card and its two pill buttons are the ONLY graphical "
+    "elements in the frame. Everything else outside the card is the "
+    "plain fabric/paper background.\n"
+    "- Do NOT add any extra text, watermarks, logos, brand names, "
+    "signatures, hashtags, emojis, captions, headings, footers, "
+    "decorative lines, icons, or progress bars anywhere on the image.\n"
+    "- Do NOT show any furniture, lighting fixtures, room scenes, "
+    "hands, people, or product mockups."
+)
+
