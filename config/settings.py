@@ -100,14 +100,21 @@ SHOP_NOW_TEXT = os.environ.get("SHOP_NOW_TEXT", "SHOP NOW")
 # outputs (Moodboard, After Reels, Closeups, CTA) inherit the brand
 # mark. Set BRAND_WATERMARK_ENABLED=false to skip the stamp.
 BRAND_WATERMARK_ENABLED = _env_bool("BRAND_WATERMARK_ENABLED", True)
-# Optional path to a custom watermark PNG. When unset, the watermark
-# is rendered programmatically as a black square containing
-# BRAND_WATERMARK_LINE1 / LINE2 (defaults: "Home" / "Cartel").
-BRAND_WATERMARK_PATH = os.environ.get("BRAND_WATERMARK_PATH", "").strip() or None
+# Path to the watermark PNG to composite. Defaults to the bundled
+# HomeCartel brand asset; set BRAND_WATERMARK_PATH=/some/other.png to
+# override. If the resolved path doesn't exist, the watermark is
+# rendered programmatically using BRAND_WATERMARK_LINE1 / LINE2.
+_DEFAULT_WATERMARK = os.path.join(PROJECT_ROOT, "assets", "brand_watermark.png")
+BRAND_WATERMARK_PATH = (
+    os.environ.get("BRAND_WATERMARK_PATH", "").strip()
+    or (_DEFAULT_WATERMARK if os.path.isfile(_DEFAULT_WATERMARK) else None)
+)
 BRAND_WATERMARK_LINE1 = os.environ.get("BRAND_WATERMARK_LINE1", "Home")
 BRAND_WATERMARK_LINE2 = os.environ.get("BRAND_WATERMARK_LINE2", "Cartel")
 # Width of the watermark as a fraction of the source image width.
-BRAND_WATERMARK_WIDTH_RATIO = _env_float("BRAND_WATERMARK_WIDTH_RATIO", 0.10)
+# The bundled HomeCartel banner is ~4:1, so 0.22 lands a tasteful
+# top-of-image strip without dominating the photo.
+BRAND_WATERMARK_WIDTH_RATIO = _env_float("BRAND_WATERMARK_WIDTH_RATIO", 0.22)
 # Anchor: top-left, top-center, top-right, bottom-left, bottom-center,
 # bottom-right, or center.
 BRAND_WATERMARK_POSITION = os.environ.get("BRAND_WATERMARK_POSITION", "top-center")

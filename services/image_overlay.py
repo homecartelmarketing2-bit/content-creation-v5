@@ -322,7 +322,7 @@ def add_watermark(
     watermark_path: str | None = None,
     line1: str = "Home",
     line2: str = "Cartel",
-    width_ratio: float = 0.10,
+    width_ratio: float = 0.22,
     position: str = "top-center",
     horizontal_padding_ratio: float = 0.03,
     vertical_padding_ratio: float = 0.0,
@@ -333,8 +333,8 @@ def add_watermark(
     result to ``output_path``. Returns ``output_path`` on success or
     None on failure.
 
-    The watermark is auto-sized so its longest edge equals
-    ``width_ratio`` of the image width.
+    The watermark is auto-sized so its width equals ``width_ratio`` of
+    the image width.
     """
     if not os.path.exists(input_path):
         print(f"[ERROR] Watermark source missing: {input_path}")
@@ -391,7 +391,7 @@ def make_watermarked_image(
     watermark_path: str | None = None,
     line1: str = "Home",
     line2: str = "Cartel",
-    width_ratio: float = 0.10,
+    width_ratio: float = 0.22,
     position: str = "top-center",
     horizontal_padding_ratio: float = 0.03,
     vertical_padding_ratio: float = 0.0,
