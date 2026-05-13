@@ -111,10 +111,10 @@ BRAND_WATERMARK_PATH = (
 )
 BRAND_WATERMARK_LINE1 = os.environ.get("BRAND_WATERMARK_LINE1", "Home")
 BRAND_WATERMARK_LINE2 = os.environ.get("BRAND_WATERMARK_LINE2", "Cartel")
-# Width of the watermark as a fraction of the source image width.
-# The bundled HomeCartel banner is ~4:1, so 0.22 lands a tasteful
-# top-of-image strip without dominating the photo.
-BRAND_WATERMARK_WIDTH_RATIO = _env_float("BRAND_WATERMARK_WIDTH_RATIO", 0.22)
+# Width of the watermark as a fraction of the source image width. The
+# bundled square HomeCartel badge reads cleanly at ~10% of the photo
+# width.
+BRAND_WATERMARK_WIDTH_RATIO = _env_float("BRAND_WATERMARK_WIDTH_RATIO", 0.10)
 # Anchor: top-left, top-center, top-right, bottom-left, bottom-center,
 # bottom-right, or center.
 BRAND_WATERMARK_POSITION = os.environ.get("BRAND_WATERMARK_POSITION", "top-center")
