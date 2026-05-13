@@ -17,12 +17,27 @@
 #    Phase 13  →  Polls and Slider (LLM-generated A/B poll, rendered by nano-banana)
 # =====================================================================
 
+import os
+import tempfile
+
 from config.prompts import (
     MOODBOARD_PROMPT, BEFORE_REELS_PROMPT, AFTER_REELS_PROMPT,
     CLOSEUP_PROMPT_TEMPLATE, CLOSEUP_VIDEO_PROMPT, MUSIC_PROMPT,
     POLL_IMAGE_PROMPT_TEMPLATE,
 )
-from config.settings import SHOP_NOW_TEXT
+from config.settings import (
+    SHOP_NOW_TEXT,
+    BRAND_WATERMARK_ENABLED,
+    BRAND_WATERMARK_PATH,
+    BRAND_WATERMARK_LINE1,
+    BRAND_WATERMARK_LINE2,
+    BRAND_WATERMARK_WIDTH_RATIO,
+    BRAND_WATERMARK_POSITION,
+    BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO,
+    BRAND_WATERMARK_VERTICAL_PADDING_RATIO,
+    BRAND_WATERMARK_OPACITY,
+    BRAND_WATERMARK_JPEG_QUALITY,
+)
 
 from services.airtable import (
     get_next_unfinished_row,
@@ -36,11 +51,11 @@ from services.kie import (
     create_image_task, create_blend_task, create_video_task,
     create_music_task, poll_task_status
 )
-from services.zoho import upload_from_url, upload_and_get_public_link
+from services.zoho import upload_from_url, upload_local_file, upload_and_get_public_link
 from services.vision_llm import get_random_local_photo, generate_prompt, generate_poll
 from services.pinterest_scraper import ensure_marketing_photos
 from services.video import download, combine, add_audio_to_video, cleanup_temp_files
-from services.image_overlay import make_shop_now_image
+from services.image_overlay import make_shop_now_image, make_watermarked_image
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -193,7 +208,14 @@ def _phase1_styled_photo(table_id: str, record_id: str, ui_callback=None) -> str
 
 
 def _phase2_blend(table_id: str, record_id: str, blend_prompt: str, ui_callback=None) -> None:
-    """Phase 2: Blend the styled photo with furniture items."""
+    """Phase 2: Blend the styled photo with furniture items.
+
+    When ``BRAND_WATERMARK_ENABLED`` is true, the Kie.ai blend output is
+    downloaded, stamped with the HomeCartel watermark, and the
+    watermarked file is uploaded directly to Airtable and Zoho. This
+    means every downstream phase that consumes the Blended Image
+    (Moodboard, After Reels, Closeups, CTA) inherits the brand mark.
+    """
     fields = refetch_record(table_id, record_id)
     styled = fields.get("Styled Photo")
     furn1 = fields.get("Furniture Item")
@@ -222,21 +244,77 @@ def _phase2_blend(table_id: str, record_id: str, blend_prompt: str, ui_callback=
         update_status(table_id, record_id, "Error - Blend Generation Failed")
         return
 
-    update_attachment(table_id, record_id, "Blended Image", blended_url)
-    saved_path = f"{record_id}_blended.png"
-    upload_from_url(blended_url, saved_path, "Blended Image")
-    print("[OK] Phase 2 (Blend) done.")
-    
-    if ui_callback:
-        import requests, os
-        import tempfile
-        tmp_img = os.path.join(tempfile.gettempdir(), saved_path)
+    raw_path = None
+    watermarked_path = None
+    ui_image_path = None
+
+    if BRAND_WATERMARK_ENABLED:
+        if ui_callback:
+            ui_callback(
+                "⏳ Phase 2: Stamping Watermark...",
+                desc_text="Adding the HomeCartel brand watermark to the Blended Image...",
+            )
+
+        raw_path = download(blended_url, f"{record_id}_blended_raw.png")
+        if raw_path:
+            watermarked_path = make_watermarked_image(
+                raw_path,
+                record_id,
+                output_basename=f"{record_id}_blended",
+                extension=".jpg",
+                watermark_path=BRAND_WATERMARK_PATH,
+                line1=BRAND_WATERMARK_LINE1,
+                line2=BRAND_WATERMARK_LINE2,
+                width_ratio=BRAND_WATERMARK_WIDTH_RATIO,
+                position=BRAND_WATERMARK_POSITION,
+                horizontal_padding_ratio=BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO,
+                vertical_padding_ratio=BRAND_WATERMARK_VERTICAL_PADDING_RATIO,
+                opacity=BRAND_WATERMARK_OPACITY,
+                jpeg_quality=BRAND_WATERMARK_JPEG_QUALITY,
+            )
+
+    if watermarked_path:
+        attached = upload_attachment_file(
+            record_id, "Blended Image", watermarked_path,
+            content_type="image/jpeg",
+        )
+        if not attached:
+            print("[WARN] Watermarked Blended Image upload to Airtable failed; "
+                  "falling back to raw Kie.ai URL.")
+            update_attachment(table_id, record_id, "Blended Image", blended_url)
+
         try:
-             with open(tmp_img, 'wb') as f:
-                 f.write(requests.get(blended_url).content)
-             ui_callback("Phase 2: Blended Image", image_path=tmp_img)
-        except:
-             pass
+            upload_local_file(
+                watermarked_path,
+                f"{record_id}_blended.jpg",
+                "Blended Image",
+            )
+        except Exception as e:
+            print(f"[WARN] Zoho upload of watermarked Blended Image failed: {e}")
+
+        ui_image_path = watermarked_path
+    else:
+        if BRAND_WATERMARK_ENABLED:
+            print("[WARN] Watermarking failed; uploading the raw Blended Image.")
+        update_attachment(table_id, record_id, "Blended Image", blended_url)
+        upload_from_url(blended_url, f"{record_id}_blended.png", "Blended Image")
+
+    print("[OK] Phase 2 (Blend) done.")
+
+    if ui_callback:
+        if ui_image_path and os.path.exists(ui_image_path):
+            ui_callback("Phase 2: Blended Image", image_path=ui_image_path)
+        else:
+            import requests
+            tmp_img = os.path.join(tempfile.gettempdir(), f"{record_id}_blended.png")
+            try:
+                with open(tmp_img, 'wb') as f:
+                    f.write(requests.get(blended_url).content)
+                ui_callback("Phase 2: Blended Image", image_path=tmp_img)
+            except Exception:
+                pass
+
+    cleanup_temp_files(raw_path)
 
 
 def _phase3_moodboard(table_id: str, record_id: str, ui_callback=None) -> None:
