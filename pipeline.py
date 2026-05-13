@@ -80,15 +80,80 @@ def _apply_music(video_path: str, record_id: str, label: str) -> str:
         return video_path
 
     final_path = add_audio_to_video(video_path, audio_path, f"{record_id}_{label.lower().replace(' ', '_')}_with_music.mp4")
-    
+
     # Cleanup temp audio
     cleanup_temp_files(audio_path)
-    
+
     if final_path:
         # Return path to the new video with music
         return final_path
-    
+
     return video_path
+
+
+def _upload_image_output(
+    table_id: str,
+    record_id: str,
+    airtable_field: str,
+    zoho_folder: str,
+    source_url: str,
+    output_basename: str,
+) -> str | None:
+    """Uploads an image output, watermarking it first when enabled."""
+    raw_path = None
+    watermarked_path = None
+
+    if BRAND_WATERMARK_ENABLED:
+        raw_path = download(source_url, f"{output_basename}_raw.png")
+        if raw_path:
+            watermarked_path = make_watermarked_image(
+                raw_path,
+                record_id,
+                output_basename=output_basename,
+                extension=".jpg",
+                watermark_path=BRAND_WATERMARK_PATH,
+                line1=BRAND_WATERMARK_LINE1,
+                line2=BRAND_WATERMARK_LINE2,
+                width_ratio=BRAND_WATERMARK_WIDTH_RATIO,
+                position=BRAND_WATERMARK_POSITION,
+                horizontal_padding_ratio=BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO,
+                vertical_padding_ratio=BRAND_WATERMARK_VERTICAL_PADDING_RATIO,
+                opacity=BRAND_WATERMARK_OPACITY,
+                jpeg_quality=BRAND_WATERMARK_JPEG_QUALITY,
+            )
+
+    if watermarked_path:
+        attached = upload_attachment_file(
+            record_id,
+            airtable_field,
+            watermarked_path,
+            content_type="image/jpeg",
+        )
+        if not attached:
+            print(
+                f"[WARN] Watermarked {airtable_field} upload to Airtable failed; "
+                "falling back to raw URL."
+            )
+            update_attachment(table_id, record_id, airtable_field, source_url)
+
+        try:
+            upload_local_file(
+                watermarked_path,
+                f"{output_basename}.jpg",
+                zoho_folder,
+            )
+        except Exception as e:
+            print(f"[WARN] Zoho upload of watermarked {airtable_field} failed: {e}")
+
+        cleanup_temp_files(raw_path)
+        return watermarked_path
+
+    if BRAND_WATERMARK_ENABLED:
+        print(f"[WARN] Watermarking failed for {airtable_field}; uploading raw image.")
+    update_attachment(table_id, record_id, airtable_field, source_url)
+    upload_from_url(source_url, f"{output_basename}.png", zoho_folder)
+    cleanup_temp_files(raw_path)
+    return None
 
 
 # ── Phase Runners ───────────────────────────────────────────────────
@@ -345,21 +410,28 @@ def _phase3_moodboard(table_id: str, record_id: str, ui_callback=None) -> None:
         update_status(table_id, record_id, "Error - Moodboard Generation Failed")
         return
 
-    update_attachment(table_id, record_id, "Moodboard Image", moodboard_url)
-    saved_path = f"{record_id}_moodboard.png"
-    upload_from_url(moodboard_url, saved_path, "Moodboard")
+    ui_image_path = _upload_image_output(
+        table_id,
+        record_id,
+        "Moodboard Image",
+        "Moodboard",
+        moodboard_url,
+        f"{record_id}_moodboard",
+    )
     print("[OK] Phase 3 (Moodboard) done.")
-    
+
     if ui_callback:
-        import requests, os
-        import tempfile
-        tmp_img = os.path.join(tempfile.gettempdir(), saved_path)
-        try:
-             with open(tmp_img, 'wb') as f:
-                 f.write(requests.get(moodboard_url).content)
-             ui_callback("Phase 3: Moodboard", image_path=tmp_img)
-        except:
-             pass
+        if ui_image_path and os.path.exists(ui_image_path):
+            ui_callback("Phase 3: Moodboard", image_path=ui_image_path)
+        else:
+            import requests
+            tmp_img = os.path.join(tempfile.gettempdir(), f"{record_id}_moodboard.png")
+            try:
+                with open(tmp_img, 'wb') as f:
+                    f.write(requests.get(moodboard_url).content)
+                ui_callback("Phase 3: Moodboard", image_path=tmp_img)
+            except Exception:
+                pass
 
 
 def _phase_video(table_id: str, record_id: str,
@@ -508,20 +580,29 @@ def _phase_closeup_photo(table_id: str, record_id: str,
         update_status(table_id, record_id, f"Error - {label} Generation Failed")
         return
 
-    update_attachment(table_id, record_id, target_field, photo_url)
-    saved_path = f"{record_id}_{target_field.lower().replace(' ', '_')}.png"
-    upload_from_url(photo_url, saved_path, target_field)
+    output_basename = f"{record_id}_{target_field.lower().replace(' ', '_')}"
+    ui_image_path = _upload_image_output(
+        table_id,
+        record_id,
+        target_field,
+        target_field,
+        photo_url,
+        output_basename,
+    )
     print(f"[OK] {label} done.")
 
     if ui_callback:
-        import requests, os, tempfile
-        tmp_img = os.path.join(tempfile.gettempdir(), saved_path)
-        try:
-            with open(tmp_img, 'wb') as f:
-                f.write(requests.get(photo_url).content)
-            ui_callback(f"{label} Generated", image_path=tmp_img)
-        except:
-            pass
+        if ui_image_path and os.path.exists(ui_image_path):
+            ui_callback(f"{label} Generated", image_path=ui_image_path)
+        else:
+            import requests
+            tmp_img = os.path.join(tempfile.gettempdir(), f"{output_basename}.png")
+            try:
+                with open(tmp_img, 'wb') as f:
+                    f.write(requests.get(photo_url).content)
+                ui_callback(f"{label} Generated", image_path=tmp_img)
+            except Exception:
+                pass
 
 
 def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> None:
@@ -611,18 +692,40 @@ def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
         cleanup_temp_files(blended_path)
         return
 
+    final_cta_path = overlay_path
+    if BRAND_WATERMARK_ENABLED:
+        watermarked_cta_path = make_watermarked_image(
+            overlay_path,
+            record_id,
+            output_basename=f"{record_id}_cta",
+            extension=".jpg",
+            watermark_path=BRAND_WATERMARK_PATH,
+            line1=BRAND_WATERMARK_LINE1,
+            line2=BRAND_WATERMARK_LINE2,
+            width_ratio=BRAND_WATERMARK_WIDTH_RATIO,
+            position=BRAND_WATERMARK_POSITION,
+            horizontal_padding_ratio=BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO,
+            vertical_padding_ratio=BRAND_WATERMARK_VERTICAL_PADDING_RATIO,
+            opacity=BRAND_WATERMARK_OPACITY,
+            jpeg_quality=BRAND_WATERMARK_JPEG_QUALITY,
+        )
+        if watermarked_cta_path:
+            final_cta_path = watermarked_cta_path
+        else:
+            print("[WARN] CTA watermarking failed; using SHOP NOW overlay as-is.")
+
     # Attach the file directly to Airtable via the content API.
     # We can't rely on a Zoho public URL here because Zoho's share
     # links serve an HTML viewer page rather than the binary, which
     # Airtable cannot ingest.
     attached = upload_attachment_file(
-        record_id, "CTA", overlay_path, content_type="image/jpeg",
+        record_id, "CTA", final_cta_path, content_type="image/jpeg",
     )
 
     # Best-effort Zoho backup so the user still has a copy in the
     # CTA folder. Failures here are non-fatal.
     try:
-        upload_and_get_public_link(overlay_path, folder_key="CTA")
+        upload_local_file(final_cta_path, f"{record_id}_cta.jpg", "CTA")
     except Exception as e:
         print(f"[WARN] Zoho backup of CTA failed: {e}")
 
@@ -632,7 +735,7 @@ def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
             ui_callback(
                 "Phase 12: CTA Built",
                 desc_text="Final CTA image with SHOP NOW overlay uploaded to Airtable.",
-                image_path=overlay_path,
+                image_path=final_cta_path,
             )
     else:
         print("[WARN] CTA attachment upload to Airtable failed.")
@@ -640,10 +743,10 @@ def _phase12_shop_now(table_id: str, record_id: str, ui_callback=None) -> None:
             ui_callback(
                 "Phase 12: CTA Built (local only)",
                 desc_text="Overlay rendered but Airtable upload failed.",
-                image_path=overlay_path,
+                image_path=final_cta_path,
             )
 
-    cleanup_temp_files(blended_path, overlay_path)
+    cleanup_temp_files(blended_path, overlay_path, final_cta_path if final_cta_path != overlay_path else None)
 
 
 # ── Phase 13: Polls and Slider ─────────────────────────
@@ -726,8 +829,14 @@ def _phase13_poll(table_id: str, record_id: str,
 
     # Attach to the 'Polls and Slider' Airtable attachment field +
     # best-effort backup to Zoho.
-    update_attachment(table_id, record_id, "Polls and Slider", poll_url)
-    upload_from_url(poll_url, f"{record_id}_polls_and_slider.png", "Polls and Slider")
+    ui_image_path = _upload_image_output(
+        table_id,
+        record_id,
+        "Polls and Slider",
+        "Polls and Slider",
+        poll_url,
+        f"{record_id}_polls_and_slider",
+    )
     print("[OK] Phase 13 ('Polls and Slider') done.")
 
     if ui_callback:
@@ -738,6 +847,7 @@ def _phase13_poll(table_id: str, record_id: str,
                 f"A: {poll['choice_a']}\n"
                 f"B: {poll['choice_b']}"
             ),
+            image_path=ui_image_path if ui_image_path and os.path.exists(ui_image_path) else None,
         )
 
 
