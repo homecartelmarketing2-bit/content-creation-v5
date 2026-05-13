@@ -325,7 +325,7 @@ def add_watermark(
     width_ratio: float = 0.10,
     position: str = "top-center",
     horizontal_padding_ratio: float = 0.03,
-    vertical_padding_ratio: float = 0.02,
+    vertical_padding_ratio: float = 0.0,
     opacity: float = 1.0,
     jpeg_quality: int = 95,
 ) -> str | None:
@@ -394,7 +394,7 @@ def make_watermarked_image(
     width_ratio: float = 0.10,
     position: str = "top-center",
     horizontal_padding_ratio: float = 0.03,
-    vertical_padding_ratio: float = 0.02,
+    vertical_padding_ratio: float = 0.0,
     opacity: float = 1.0,
     jpeg_quality: int = 95,
 ) -> str | None:
