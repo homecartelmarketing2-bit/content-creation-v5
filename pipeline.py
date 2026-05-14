@@ -228,7 +228,13 @@ def _phase0_prompt(table_id: str, record_id: str, fields: dict, ui_callback=None
 
 
 def _phase1_styled_photo(table_id: str, record_id: str, ui_callback=None) -> str | None:
-    """Phase 1: Generate a styled photo from the prompt via Kie.ai."""
+    """Phase 1: Generate a styled photo from the prompt via Kie.ai.
+
+    When ``BRAND_WATERMARK_ENABLED`` is true, the Kie.ai output is
+    downloaded, stamped with the HomeCartel watermark, and the
+    watermarked file is uploaded directly to Airtable and Zoho before
+    the downstream blend / before-reels phases consume it.
+    """
     fields = refetch_record(table_id, record_id)
     prompt = fields.get("Styled Photo Prompt", "")
 
@@ -251,23 +257,34 @@ def _phase1_styled_photo(table_id: str, record_id: str, ui_callback=None) -> str
         update_status(table_id, record_id, "Error - Styled Photo Generation Failed")
         return None
 
-    update_attachment(table_id, record_id, "Styled Photo", image_url)
-    saved_path = f"{record_id}_styled_photo.png"
-    upload_from_url(image_url, saved_path, "Styled Photo")
+    if ui_callback and BRAND_WATERMARK_ENABLED:
+        ui_callback(
+            "⏳ Phase 1: Stamping Watermark...",
+            desc_text="Adding the HomeCartel brand watermark to the Styled Photo...",
+        )
+
+    ui_image_path = _upload_image_output(
+        table_id,
+        record_id,
+        "Styled Photo",
+        "Styled Photo",
+        image_url,
+        f"{record_id}_styled_photo",
+    )
     print("[OK] Phase 1 (Styled Photo) done.")
-    
+
     if ui_callback:
-        # Assuming upload_from_url saves it locally first or we need to download it for UI.
-        # Temp downlaod for UI since upload_from_url handles Zoho, we'll use requests quickly.
-        import requests, os
-        import tempfile
-        tmp_img = os.path.join(tempfile.gettempdir(), saved_path)
-        try:
-             with open(tmp_img, 'wb') as f:
-                 f.write(requests.get(image_url).content)
-             ui_callback("Phase 1: Styled Photo", image_path=tmp_img)
-        except:
-             pass
+        if ui_image_path and os.path.exists(ui_image_path):
+            ui_callback("Phase 1: Styled Photo", image_path=ui_image_path)
+        else:
+            import requests
+            tmp_img = os.path.join(tempfile.gettempdir(), f"{record_id}_styled_photo.png")
+            try:
+                with open(tmp_img, 'wb') as f:
+                    f.write(requests.get(image_url).content)
+                ui_callback("Phase 1: Styled Photo", image_path=tmp_img)
+            except Exception:
+                pass
 
     return "Processing"
 
