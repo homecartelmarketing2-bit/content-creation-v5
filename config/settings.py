@@ -24,6 +24,13 @@ def _env_csv(name: str, default: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME_ROOT = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else PROJECT_ROOT
 DATA_DIR = os.path.join(RUNTIME_ROOT, "data")
@@ -87,6 +94,38 @@ ZOHO_FOLDERS = {
 
 # ── Shop Now Overlay (Phase 12) ────────────────────────────────────
 SHOP_NOW_TEXT = os.environ.get("SHOP_NOW_TEXT", "SHOP NOW")
+
+# ── Brand Watermark (Phase 2: Blended Image) ───────────────────────
+# Stamps the HomeCartel logo onto the Blended Image so all derived
+# outputs (Moodboard, After Reels, Closeups, CTA) inherit the brand
+# mark. Set BRAND_WATERMARK_ENABLED=false to skip the stamp.
+BRAND_WATERMARK_ENABLED = _env_bool("BRAND_WATERMARK_ENABLED", True)
+# Path to the watermark PNG to composite. Defaults to the bundled
+# HomeCartel brand asset; set BRAND_WATERMARK_PATH=/some/other.png to
+# override. If the resolved path doesn't exist, the watermark is
+# rendered programmatically using BRAND_WATERMARK_LINE1 / LINE2.
+_DEFAULT_WATERMARK = os.path.join(PROJECT_ROOT, "assets", "brand_watermark.png")
+BRAND_WATERMARK_PATH = (
+    os.environ.get("BRAND_WATERMARK_PATH", "").strip()
+    or (_DEFAULT_WATERMARK if os.path.isfile(_DEFAULT_WATERMARK) else None)
+)
+BRAND_WATERMARK_LINE1 = os.environ.get("BRAND_WATERMARK_LINE1", "Home")
+BRAND_WATERMARK_LINE2 = os.environ.get("BRAND_WATERMARK_LINE2", "Cartel")
+# Width of the watermark as a fraction of the source image width. The
+# bundled square HomeCartel badge reads cleanly at ~10% of the photo
+# width.
+BRAND_WATERMARK_WIDTH_RATIO = _env_float("BRAND_WATERMARK_WIDTH_RATIO", 0.10)
+# Anchor: top-left, top-center, top-right, bottom-left, bottom-center,
+# bottom-right, or center.
+BRAND_WATERMARK_POSITION = os.environ.get("BRAND_WATERMARK_POSITION", "top-center")
+BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO = _env_float(
+    "BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO", 0.03,
+)
+BRAND_WATERMARK_VERTICAL_PADDING_RATIO = _env_float(
+    "BRAND_WATERMARK_VERTICAL_PADDING_RATIO", 0.0,
+)
+BRAND_WATERMARK_OPACITY = _env_float("BRAND_WATERMARK_OPACITY", 1.0)
+BRAND_WATERMARK_JPEG_QUALITY = _env_int("BRAND_WATERMARK_JPEG_QUALITY", 95)
 
 # ── Vision LLM (local LM Studio) ───────────────────────────────────
 VISION_LLM_MODEL = os.environ.get("VISION_LLM_MODEL", "zai-org/glm-4.6v-flash")
