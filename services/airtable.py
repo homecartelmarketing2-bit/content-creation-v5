@@ -66,6 +66,38 @@ def refetch_record(table_id: str, record_id: str) -> dict:
         return {}
 
 
+def list_records(table_id: str, *, page_size: int = 100):
+    """Yields every record in ``table_id``, paginating through Airtable's
+    100-records-per-page API. Each yielded item is the raw record dict
+    (``id`` + ``fields``). Stops silently on transport errors after
+    logging — the caller decides whether a partial pass is acceptable.
+    """
+    params = {"pageSize": max(1, min(100, page_size))}
+    offset = None
+    while True:
+        if offset:
+            params["offset"] = offset
+        try:
+            resp = requests.get(
+                _api_url(table_id),
+                headers=_headers(),
+                params=params,
+                timeout=60,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            print(f"[ERROR] Listing records for {table_id}: {e}")
+            return
+
+        payload = resp.json()
+        for rec in payload.get("records", []):
+            yield rec
+
+        offset = payload.get("offset")
+        if not offset:
+            return
+
+
 # ── Write ───────────────────────────────────────────────────────────
 
 def _patch(table_id: str, record_id: str, fields: dict, *, silent: bool = False) -> bool:
