@@ -140,6 +140,22 @@ def update_attachment(table_id: str, record_id: str, field_name: str, url: str) 
     return ok
 
 
+def update_attachments(table_id: str, record_id: str, field_name: str,
+                        urls: list[str]) -> bool:
+    """Attach multiple files (by public URL) to a single attachment field.
+
+    Empty / falsy entries in ``urls`` are filtered out. Returns False
+    when no usable URL was provided.
+    """
+    payload = [{"url": u} for u in urls if u]
+    if not payload:
+        return False
+    ok = _patch(table_id, record_id, {field_name: payload})
+    if ok:
+        print(f"[OK] '{field_name}' attachments uploaded ({len(payload)})")
+    return ok
+
+
 def upload_attachment_file(
     record_id: str,
     field_name: str,

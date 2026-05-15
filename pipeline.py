@@ -15,6 +15,8 @@
 #    Phase 11  →  Combine Closeup Videos (Closeup1 + Closeup2 + After Reels)
 #    Phase 12  →  CTA (Blended Image + "SHOP NOW" overlay)
 #    Phase 13  →  Polls and Slider (LLM-generated A/B poll, rendered by nano-banana)
+#    Phase 14  →  Combine Closeup Photos (Blended + Closeup1 + Closeup2
+#                  attached together in one multi-attachment field)
 # =====================================================================
 
 import os
@@ -45,6 +47,7 @@ from services.airtable import (
     update_status,
     update_field,
     update_attachment,
+    update_attachments,
     upload_attachment_file,
 )
 from services.kie import (
@@ -868,6 +871,72 @@ def _phase13_poll(table_id: str, record_id: str,
         )
 
 
+# ── Phase 14: Combine Closeup Photos ─────────────────────────────
+
+def _phase14_combine_closeup_photos(
+    table_id: str, record_id: str, ui_callback=None,
+) -> None:
+    """Phase 14: Attach Blended Image + Closeup One + Closeup Two together.
+
+    Pulls the existing watermarked attachments from Airtable and writes
+    them as three separate items to the multi-attachment field
+    ``Combine Closeup Photos`` on the same row. The photos are not
+    resized, re-encoded, or re-watermarked — each one keeps the
+    HomeCartel watermark it was stamped with by Phase 2 / 7 / 8.
+    """
+    fields = refetch_record(table_id, record_id)
+
+    if fields.get("Combine Closeup Photos"):
+        print("[INFO] 'Combine Closeup Photos' already populated. Skipping Phase 14.")
+        return
+
+    blended = fields.get("Blended Image")
+    closeup1 = fields.get("Closeup Photo One")
+    closeup2 = fields.get("Closeup Photo Two")
+
+    sources = [
+        ("Blended Image", blended),
+        ("Closeup Photo One", closeup1),
+        ("Closeup Photo Two", closeup2),
+    ]
+
+    urls: list[str] = []
+    missing: list[str] = []
+    for label, attachment in sources:
+        if attachment and isinstance(attachment, list) and attachment[0].get("url"):
+            urls.append(attachment[0]["url"])
+        else:
+            missing.append(label)
+
+    if missing:
+        print(
+            f"[WARN] Phase 14 missing source attachment(s): {', '.join(missing)}. "
+            "Skipping Combine Closeup Photos."
+        )
+        return
+
+    print("[INFO] Phase 14: Attaching Blended + Closeup One + Closeup Two...")
+    if ui_callback:
+        ui_callback(
+            "⏳ Phase 14: Combining Closeup Photos...",
+            desc_text="Attaching Blended Image + Closeup One + Closeup Two to 'Combine Closeup Photos'.",
+        )
+
+    ok = update_attachments(
+        table_id, record_id, "Combine Closeup Photos", urls,
+    )
+
+    if ok:
+        print("[OK] Phase 14 ('Combine Closeup Photos') done.")
+        if ui_callback:
+            ui_callback(
+                "Phase 14: Combine Closeup Photos Built",
+                desc_text="Blended Image, Closeup One, and Closeup Two attached together.",
+            )
+    else:
+        print("[WARN] Phase 14 attachment write to Airtable failed.")
+
+
 # ── Main Orchestrator ───────────────────────────────────────────────
 
 def process_one_row(table_id: str, blend_prompt: str,
@@ -966,9 +1035,12 @@ def process_one_row(table_id: str, blend_prompt: str,
         # Phase 12: CTA (Blended Image + SHOP NOW overlay)
         _phase12_shop_now(table_id, record_id, ui_callback)
 
-        # Phase 13: Polls and Slider (LLM-generated A/B poll, final phase)
+        # Phase 13: Polls and Slider (LLM-generated A/B poll)
         _phase13_poll(table_id, record_id, item1=item1, item2=item2,
                       ui_callback=ui_callback)
+
+        # Phase 14: Combine Closeup Photos (Blended + Closeup1 + Closeup2)
+        _phase14_combine_closeup_photos(table_id, record_id, ui_callback)
 
     # Mark complete
     update_status(table_id, record_id, "Complete")
