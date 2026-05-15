@@ -8,14 +8,13 @@ AFTER_REELS_PROMPT = "Slowly Rotating Around Camera Movement"
 CLOSEUP_VIDEO_PROMPT = "Slowly Rotating Around Camera Movement"
 
 # ── Music Prompt (Suno) ────────────────────────────────────────────
+# Kept short and grounded so Suno renders a realistic, listenable track
+# instead of stacking too many genre cues. Focuses on actual instruments
+# and a clear mood rather than marketing adjectives.
 MUSIC_PROMPT = (
-    "Engaging warm uplifting instrumental marketing music for room "
-    "interior reels. Cinematic and aspirational lifestyle mood with "
-    "soft acoustic guitar, gentle ambient piano, smooth atmospheric "
-    "pads and light tasteful modern percussion. Sophisticated, cozy, "
-    "and contemporary — perfect for showcasing beautiful home interiors "
-    "and room transformations. Mid-tempo, smooth groove, positive and "
-    "inviting, no vocals, instrumental only."
+    "Soft ambient lo-fi instrumental. Mellow piano melody over warm pads "
+    "and a gentle, steady beat. Calm, cozy, modern home interior vibe. "
+    "Clean mix, no vocals, instrumental only."
 )
 
 # ── Closeup Photo Prompt ──────────────────────────────────────────

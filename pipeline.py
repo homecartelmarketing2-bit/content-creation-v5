@@ -12,7 +12,7 @@
 #    Phase 8   →  Closeup Photo Two  (from Blended Image)
 #    Phase 9   →  Closeup Photo One Video
 #    Phase 10  →  Closeup Photo Two Video
-#    Phase 11  →  Combine Closeup Videos (Closeup1 + Closeup2 + After Reels)
+#    Phase 11  →  Combine Closeup Videos (After Reels + Closeup1 + Closeup2)
 #    Phase 12  →  CTA (Blended Image + "SHOP NOW" overlay)
 #    Phase 13  →  Polls and Slider (LLM-generated A/B poll, rendered by nano-banana)
 # =====================================================================
@@ -232,8 +232,13 @@ def _phase1_styled_photo(table_id: str, record_id: str, ui_callback=None) -> str
 
     When ``BRAND_WATERMARK_ENABLED`` is true, the Kie.ai output is
     downloaded, stamped with the HomeCartel watermark, and the
-    watermarked file is uploaded directly to Airtable and Zoho before
-    the downstream blend / before-reels phases consume it.
+    watermarked file is uploaded to Airtable (``Styled Photo``) and Zoho
+    for display / download.
+
+    The raw (un-watermarked) Kie.ai URL is also persisted to the
+    ``Styled Photo Raw URL`` text field so that the Before Reels video
+    phase can consume the clean image directly — the brand watermark is
+    intentionally kept off of video outputs.
     """
     fields = refetch_record(table_id, record_id)
     prompt = fields.get("Styled Photo Prompt", "")
@@ -256,6 +261,12 @@ def _phase1_styled_photo(table_id: str, record_id: str, ui_callback=None) -> str
     if not image_url:
         update_status(table_id, record_id, "Error - Styled Photo Generation Failed")
         return None
+
+    # Persist the raw (un-watermarked) Kie.ai URL so the Before Reels
+    # video phase can consume the clean image instead of the
+    # watermarked Airtable attachment. Silent so this no-ops cleanly
+    # if the text field doesn't exist in Airtable yet.
+    update_field(table_id, record_id, "Styled Photo Raw URL", image_url, silent=True)
 
     if ui_callback and BRAND_WATERMARK_ENABLED:
         ui_callback(
@@ -294,9 +305,14 @@ def _phase2_blend(table_id: str, record_id: str, blend_prompt: str, ui_callback=
 
     When ``BRAND_WATERMARK_ENABLED`` is true, the Kie.ai blend output is
     downloaded, stamped with the HomeCartel watermark, and the
-    watermarked file is uploaded directly to Airtable and Zoho. This
-    means every downstream phase that consumes the Blended Image
-    (Moodboard, After Reels, Closeups, CTA) inherits the brand mark.
+    watermarked file is uploaded to Airtable (``Blended Image``) and
+    Zoho. Downstream still-image phases (Moodboard, Closeups, CTA) read
+    the watermarked attachment so the brand mark is inherited.
+
+    The raw (un-watermarked) Kie.ai URL is also persisted to the
+    ``Blended Image Raw URL`` text field so that the After Reels video
+    phase can consume the clean image directly — video outputs should
+    not carry the brand watermark.
     """
     fields = refetch_record(table_id, record_id)
     styled = fields.get("Styled Photo")
@@ -325,6 +341,11 @@ def _phase2_blend(table_id: str, record_id: str, blend_prompt: str, ui_callback=
     if not blended_url:
         update_status(table_id, record_id, "Error - Blend Generation Failed")
         return
+
+    # Persist the raw (un-watermarked) Kie.ai URL so the After Reels
+    # video phase can consume the clean image instead of the
+    # watermarked Airtable attachment.
+    update_field(table_id, record_id, "Blended Image Raw URL", blended_url, silent=True)
 
     raw_path = None
     watermarked_path = None
@@ -455,12 +476,18 @@ def _phase_video(table_id: str, record_id: str,
                  source_field: str, target_field: str,
                  prompt: str, zoho_folder: str, label: str,
                  apply_music: bool = True,
+                 source_url_field: str | None = None,
                  ui_callback=None) -> None:
     """Generic video-from-image phase (used for Before & After Reels).
 
     When `apply_music` is False the raw Kling video is uploaded as-is
     (no Suno track). Music is intentionally skipped for the per-item
     closeup videos so it can be applied later on the combined cut.
+
+    When `source_url_field` is provided, that Airtable text field is
+    preferred as the image input. This lets video generation consume the
+    raw (non-watermarked) Kie.ai URL while the displayed attachment in
+    `source_field` remains watermarked.
     """
     fields = refetch_record(table_id, record_id)
     source = fields.get(source_field)
@@ -469,11 +496,22 @@ def _phase_video(table_id: str, record_id: str,
     if existing:
         print(f"[INFO] {label} already exists. Skipping.")
         return
-    if not source:
-        return
+
+    source_url = None
+    if source_url_field:
+        raw_value = fields.get(source_url_field)
+        if isinstance(raw_value, str) and raw_value.strip():
+            source_url = raw_value.strip()
+            print(f"[INFO] Using raw (un-watermarked) source URL from '{source_url_field}' for {label}.")
+
+    if not source_url:
+        if not source:
+            return
+        source_url = source[0]["url"]
+        if source_url_field:
+            print(f"[WARN] '{source_url_field}' empty; falling back to watermarked attachment for {label}.")
 
     print(f"[INFO] Generating {label} video...")
-    source_url = source[0]["url"]
     if ui_callback:
         ui_callback(f"⏳ Phase Video: Generating {label}...", desc_text=f"Creating video from {source_field}...")
 
@@ -597,6 +635,13 @@ def _phase_closeup_photo(table_id: str, record_id: str,
         update_status(table_id, record_id, f"Error - {label} Generation Failed")
         return
 
+    # Persist the raw (un-watermarked) closeup URL so the matching
+    # closeup-video phase can consume the clean image instead of the
+    # watermarked Airtable attachment.
+    update_field(
+        table_id, record_id, f"{target_field} Raw URL", photo_url, silent=True,
+    )
+
     output_basename = f"{record_id}_{target_field.lower().replace(' ', '_')}"
     ui_image_path = _upload_image_output(
         table_id,
@@ -623,7 +668,13 @@ def _phase_closeup_photo(table_id: str, record_id: str,
 
 
 def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> None:
-    """Phase 11: Combine Closeup One Video + Closeup Two Video + After Reels."""
+    """Phase 11: Combine After Reels + Closeup One Video + Closeup Two Video.
+
+    The After Reels clip plays first to anchor the room context, followed
+    by the two closeup videos. Music is generated once and applied to
+    the full stitched cut so the audio length matches the combined
+    video duration exactly (``add_audio_to_video`` loops/trims to fit).
+    """
     fields = refetch_record(table_id, record_id)
     cu1_video = fields.get("Closeup Photo One Video")
     cu2_video = fields.get("Closeup Photo Two Video")
@@ -637,25 +688,27 @@ def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> 
         print("[WARN] Missing one or more videos for closeup combination. Skipping.")
         return
 
-    print("[INFO] Combining Closeup Videos + After Reels...")
+    print("[INFO] Combining After Reels + Closeup Videos...")
     if ui_callback:
         ui_callback("⏳ Phase 11: Combining Closeup Videos...",
-                     desc_text="Stitching Closeup One + Closeup Two + After Reels...")
+                     desc_text="Stitching After Reels + Closeup One + Closeup Two...")
 
     cu1_path = download(cu1_video[0]["url"], f"{record_id}_closeup1.mp4")
     cu2_path = download(cu2_video[0]["url"], f"{record_id}_closeup2.mp4")
     after_path = download(after[0]["url"], f"{record_id}_after_for_closeup.mp4")
 
-    paths = [cu1_path, cu2_path, after_path]
-    if not all(paths):
+    download_paths = [after_path, cu1_path, cu2_path]
+    if not all(download_paths):
         print("[WARN] Could not download all videos for closeup combination. Skipping.")
-        cleanup_temp_files(*paths)
+        cleanup_temp_files(*download_paths)
         return
 
-    combined_path = combine(paths, f"{record_id}_combined_closeups_raw.mp4")
+    # Order: After Reels first, then Closeup One, then Closeup Two.
+    ordered_paths = [after_path, cu1_path, cu2_path]
+    combined_path = combine(ordered_paths, f"{record_id}_combined_closeups_raw.mp4")
     if not combined_path:
         print("[WARN] Closeup video combination failed. Skipping.")
-        cleanup_temp_files(*paths)
+        cleanup_temp_files(*download_paths)
         return
 
     # Apply music to the combined closeup video
@@ -671,7 +724,7 @@ def _phase_combine_closeups(table_id: str, record_id: str, ui_callback=None) -> 
     else:
         print("[WARN] Could not upload combined closeup video. Skipping.")
 
-    cleanup_temp_files(*paths, combined_path, 
+    cleanup_temp_files(*download_paths, combined_path,
                        final_combined_path if final_combined_path != combined_path else None)
 
 
@@ -910,6 +963,7 @@ def process_one_row(table_id: str, blend_prompt: str,
             source_field="Styled Photo", target_field="Before Reels",
             prompt=BEFORE_REELS_PROMPT, zoho_folder="Before Reels",
             label="Before Reels",
+            source_url_field="Styled Photo Raw URL",
             ui_callback=ui_callback
         )
         _phase_video(
@@ -917,6 +971,7 @@ def process_one_row(table_id: str, blend_prompt: str,
             source_field="Blended Image", target_field="After Reels",
             prompt=AFTER_REELS_PROMPT, zoho_folder="After Reels",
             label="After Reels",
+            source_url_field="Blended Image Raw URL",
             ui_callback=ui_callback
         )
 
@@ -947,6 +1002,7 @@ def process_one_row(table_id: str, blend_prompt: str,
             prompt=CLOSEUP_VIDEO_PROMPT, zoho_folder="Closeup Photo One Video",
             label="Closeup Photo One Video",
             apply_music=False,
+            source_url_field="Closeup Photo One Raw URL",
             ui_callback=ui_callback
         )
 
@@ -957,6 +1013,7 @@ def process_one_row(table_id: str, blend_prompt: str,
             prompt=CLOSEUP_VIDEO_PROMPT, zoho_folder="Closeup Photo Two Video",
             label="Closeup Photo Two Video",
             apply_music=False,
+            source_url_field="Closeup Photo Two Raw URL",
             ui_callback=ui_callback
         )
 
