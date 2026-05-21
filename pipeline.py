@@ -51,7 +51,7 @@ from services.kie import (
     create_image_task, create_blend_task, create_video_task,
     create_music_task, poll_task_status
 )
-from services.zoho import upload_from_url, upload_local_file, upload_and_get_public_link
+from services.zoho import upload_from_url, upload_local_file, upload_and_get_public_link, get_or_create_folder
 from services.vision_llm import get_random_local_photo, generate_prompt, generate_poll
 from services.pinterest_scraper import ensure_marketing_photos
 from services.video import download, combine, add_audio_to_video, cleanup_temp_files
@@ -921,6 +921,138 @@ def _phase13_poll(table_id: str, record_id: str,
         )
 
 
+def _get_record_suffix(record_id: str, fields: dict) -> str:
+    """Helper to extract a zero-padded/formatted folder name suffix from Airtable ID or fallback."""
+    id_val = fields.get("ID")
+    suffix = ""
+    if id_val is not None:
+        try:
+            int_id = int(float(id_val))
+            if int_id >= 0:
+                suffix = str(int_id).zfill(2) if int_id < 10 else str(int_id)
+            else:
+                suffix = str(int_id)
+        except (ValueError, TypeError):
+            suffix = str(id_val).strip()
+
+    if not suffix:
+        suffix = record_id
+    return suffix
+
+
+def _mirror_before_after_feeds(table_id: str, record_id: str, fields: dict, ui_callback=None) -> None:
+    """
+    Creates a subfolder named 'beforeandafter{suffix}' under the 'Before and After Feeds' parent folder,
+    and uploads 'Styled Photo' and 'Blended Image' into it.
+    """
+    suffix = _get_record_suffix(record_id, fields)
+    folder_name = f"beforeandafter{suffix}"
+    parent_key = "Before and After Feeds"
+
+    if ui_callback:
+        ui_callback(f"⏳ Mirroring to '{folder_name}'...", desc_text="Checking/creating Zoho subfolder...")
+
+    subfolder_id = get_or_create_folder(folder_name, parent_key)
+    if not subfolder_id:
+        print(f"[ERROR] Failed to get or create Zoho subfolder '{folder_name}' under '{parent_key}'")
+        return
+
+    styled_photos = fields.get("Styled Photo")
+    blended_images = fields.get("Blended Image")
+
+    if not styled_photos:
+        print(f"[WARN] No 'Styled Photo' attachment found in fields for record {record_id}")
+    else:
+        for idx, item in enumerate(styled_photos):
+            url = item.get("url")
+            filename = item.get("filename") or f"{record_id}_styled_photo.jpg"
+            if len(styled_photos) > 1:
+                base, ext = os.path.splitext(filename)
+                filename = f"{base}_{idx}{ext}"
+            if url:
+                if ui_callback:
+                    ui_callback(f"⏳ Uploading Styled Photo to '{folder_name}'...", desc_text=f"Filename: {filename}")
+                upload_from_url(url, filename, subfolder_id)
+
+    if not blended_images:
+        print(f"[WARN] No 'Blended Image' attachment found in fields for record {record_id}")
+    else:
+        for idx, item in enumerate(blended_images):
+            url = item.get("url")
+            filename = item.get("filename") or f"{record_id}_blended.jpg"
+            if len(blended_images) > 1:
+                base, ext = os.path.splitext(filename)
+                filename = f"{base}_{idx}{ext}"
+            if url:
+                if ui_callback:
+                    ui_callback(f"⏳ Uploading Blended Image to '{folder_name}'...", desc_text=f"Filename: {filename}")
+                upload_from_url(url, filename, subfolder_id)
+
+
+def _mirror_product_closeup_photos(table_id: str, record_id: str, fields: dict, ui_callback=None) -> None:
+    """
+    Creates a subfolder named 'productcloseupphotos{suffix}' under the 'Product Closeup Photos' parent folder,
+    and uploads 'Closeup Photo One', 'Closeup Photo Two', and 'Blended Image' into it.
+    """
+    suffix = _get_record_suffix(record_id, fields)
+    folder_name = f"productcloseupphotos{suffix}"
+    parent_key = "Product Closeup Photos"
+
+    if ui_callback:
+        ui_callback(f"⏳ Mirroring to '{folder_name}'...", desc_text="Checking/creating Zoho subfolder...")
+
+    subfolder_id = get_or_create_folder(folder_name, parent_key)
+    if not subfolder_id:
+        print(f"[ERROR] Failed to get or create Zoho subfolder '{folder_name}' under '{parent_key}'")
+        return
+
+    closeup_one = fields.get("Closeup Photo One")
+    closeup_two = fields.get("Closeup Photo Two")
+    blended_images = fields.get("Blended Image")
+
+    if not closeup_one:
+        print(f"[WARN] No 'Closeup Photo One' attachment found in fields for record {record_id}")
+    else:
+        for idx, item in enumerate(closeup_one):
+            url = item.get("url")
+            filename = item.get("filename") or f"{record_id}_closeup_one.jpg"
+            if len(closeup_one) > 1:
+                base, ext = os.path.splitext(filename)
+                filename = f"{base}_{idx}{ext}"
+            if url:
+                if ui_callback:
+                    ui_callback(f"⏳ Uploading Closeup Photo One to '{folder_name}'...", desc_text=f"Filename: {filename}")
+                upload_from_url(url, filename, subfolder_id)
+
+    if not closeup_two:
+        print(f"[WARN] No 'Closeup Photo Two' attachment found in fields for record {record_id}")
+    else:
+        for idx, item in enumerate(closeup_two):
+            url = item.get("url")
+            filename = item.get("filename") or f"{record_id}_closeup_two.jpg"
+            if len(closeup_two) > 1:
+                base, ext = os.path.splitext(filename)
+                filename = f"{base}_{idx}{ext}"
+            if url:
+                if ui_callback:
+                    ui_callback(f"⏳ Uploading Closeup Photo Two to '{folder_name}'...", desc_text=f"Filename: {filename}")
+                upload_from_url(url, filename, subfolder_id)
+
+    if not blended_images:
+        print(f"[WARN] No 'Blended Image' attachment found in fields for record {record_id}")
+    else:
+        for idx, item in enumerate(blended_images):
+            url = item.get("url")
+            filename = item.get("filename") or f"{record_id}_blended.jpg"
+            if len(blended_images) > 1:
+                base, ext = os.path.splitext(filename)
+                filename = f"{base}_{idx}{ext}"
+            if url:
+                if ui_callback:
+                    ui_callback(f"⏳ Uploading Blended Image to '{folder_name}'...", desc_text=f"Filename: {filename}")
+                upload_from_url(url, filename, subfolder_id)
+
+
 # ── Main Orchestrator ───────────────────────────────────────────────
 
 def process_one_row(table_id: str, blend_prompt: str,
@@ -1026,6 +1158,14 @@ def process_one_row(table_id: str, blend_prompt: str,
         # Phase 13: Polls and Slider (LLM-generated A/B poll, final phase)
         _phase13_poll(table_id, record_id, item1=item1, item2=item2,
                       ui_callback=ui_callback)
+
+        # Refetch final record fields to ensure we get all completed attachments (with public URLs)
+        final_fields = refetch_record(table_id, record_id)
+        if final_fields:
+            if ui_callback:
+                ui_callback("⏳ Mirroring files to Zoho folders...", desc_text="Starting Zoho subfolder mirroring...")
+            _mirror_before_after_feeds(table_id, record_id, final_fields, ui_callback=ui_callback)
+            _mirror_product_closeup_photos(table_id, record_id, final_fields, ui_callback=ui_callback)
 
     # Mark complete
     update_status(table_id, record_id, "Complete")

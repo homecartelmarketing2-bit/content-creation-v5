@@ -89,10 +89,10 @@ def _upload_file(token: str, filepath: str, filename: str, folder_id: str) -> re
 # ── Public API ──────────────────────────────────────────────────────
 
 def upload_from_url(file_url: str, filename: str, folder_key: str) -> bool:
-    """Downloads a remote file and uploads it to the named Zoho folder."""
-    folder_id = ZOHO_FOLDERS.get(folder_key)
+    """Downloads a remote file and uploads it to the named Zoho folder/ID."""
+    folder_id = ZOHO_FOLDERS.get(folder_key, folder_key)
     if not folder_id:
-        print(f"[ERROR] Unknown Zoho folder: {folder_key}")
+        print(f"[ERROR] Unknown or empty Zoho folder: {folder_key}")
         return False
 
     token = _get_access_token()
@@ -121,10 +121,10 @@ def upload_from_url(file_url: str, filename: str, folder_key: str) -> bool:
 
 
 def upload_local_file(local_path: str, filename: str, folder_key: str) -> bool:
-    """Uploads a local file directly to the named Zoho folder."""
-    folder_id = ZOHO_FOLDERS.get(folder_key)
+    """Uploads a local file directly to the named Zoho folder/ID."""
+    folder_id = ZOHO_FOLDERS.get(folder_key, folder_key)
     if not folder_id:
-        print(f"[ERROR] Unknown Zoho folder: {folder_key}")
+        print(f"[ERROR] Unknown or empty Zoho folder: {folder_key}")
         return False
 
     token = _get_access_token()
@@ -150,7 +150,7 @@ def upload_and_get_public_link(filepath: str, folder_key: str = "Before and Afte
     Uploads a local file to Zoho, creates a public download link,
     and returns the URL (used for combined videos → Airtable).
     """
-    folder_id = ZOHO_FOLDERS.get(folder_key)
+    folder_id = ZOHO_FOLDERS.get(folder_key, folder_key)
     token = _get_access_token()
     if not token:
         print("[WARN] No Zoho access token for combined video upload.")
@@ -189,6 +189,72 @@ def upload_and_get_public_link(filepath: str, folder_key: str = "Before and Afte
     except Exception as e:
         print(f"[ERROR] Combined video upload: {e}")
         return None
+
+
+def get_or_create_folder(folder_name: str, parent_key_or_id: str) -> str | None:
+    """
+    Checks if a folder with folder_name exists under parent_key_or_id.
+    If yes, returns its ID. Otherwise, creates it and returns the new ID.
+    """
+    parent_id = ZOHO_FOLDERS.get(parent_key_or_id, parent_key_or_id)
+    token = _get_access_token()
+    if not token:
+        print("[WARN] Skipping Zoho folder get/create — no access token.")
+        return None
+
+    # 1. Search for existing folder in parent (limit 100 items for safety)
+    list_url = f"https://workdrive.zoho.com/api/v1/files/{parent_id}/files"
+    headers = {
+        "Authorization": f"Zoho-oauthtoken {token}",
+        "Accept": "application/vnd.api+json"
+    }
+    params = {"page[limit]": 100}
+    try:
+        resp = requests.get(list_url, headers=headers, params=params, timeout=30)
+        if resp.status_code == 200:
+            data = resp.json().get("data", [])
+            for item in data:
+                attrs = item.get("attributes", {})
+                if attrs.get("name") == folder_name and attrs.get("is_folder") is True:
+                    print(f"[OK] Found existing Zoho folder: '{folder_name}' (ID: {item.get('id')})")
+                    return item.get("id")
+        else:
+            print(f"[WARN] Failed to list folder contents for duplicate check: {resp.status_code}")
+    except Exception as e:
+        print(f"[ERROR] Exception checking for existing folder: {e}")
+
+    # 2. Create the folder if not found
+    create_url = "https://workdrive.zoho.com/api/v1/files"
+    create_headers = {
+        "Authorization": f"Zoho-oauthtoken {token}",
+        "Accept": "application/vnd.api+json",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "data": {
+            "attributes": {
+                "name": folder_name,
+                "parent_id": parent_id
+            },
+            "type": "files"
+        }
+    }
+    try:
+        print(f"[INFO] Creating Zoho folder '{folder_name}' under parent '{parent_id}'...")
+        resp = requests.post(create_url, headers=create_headers, json=payload, timeout=30)
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            resource_id = data.get("data", {}).get("id", "")
+            if resource_id:
+                print(f"[OK] Created Zoho folder: '{folder_name}' (ID: {resource_id})")
+                return resource_id
+            print(f"[WARN] Folder created but no ID returned: {data}")
+        else:
+            print(f"[ERROR] Failed to create folder '{folder_name}' ({resp.status_code}): {resp.text}")
+    except Exception as e:
+        print(f"[ERROR] Exception during Zoho folder creation: {e}")
+
+    return None
 
 
 # ── Internal Helpers ────────────────────────────────────────────────

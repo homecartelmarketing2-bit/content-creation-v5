@@ -69,10 +69,10 @@ ZOHO_UPLOAD_URL = "https://workdrive.zoho.com/api/v1/upload"
 ZOHO_FOLDERS = {
     "Styled Photo": "s6v582b5a04cdd1574143b110a9ee16e91930",
     "Blended Image": "w3zku7ee0a7c3b0f54a66bc352f9ee4e5dd63",
-    "Moodboard": "w3zkuf14199afe01c4301bfaaee09d38bbaf6",
+    "Moodboard": "s6v58f005606052d0473b852f61ae105f4afa",
     "Styled Reels": "s6v58a88f0b597b734dd69a758fefe1d95bca",
-    "Before and After Reels": "w3zkuc243ae9fed1a4d9e83ffee0602aa1821",
-    "Before and After Feeds": "s6v5867f60395d9704a70aec8867fda313f0d",
+    "Before and After Reels": "w3zku2c37afa890e347ce8b3e9b39df7b4745",
+    "Before and After Feeds": "w71jrff1ea9e28789472cadbde915bd67fd08",
     "Before Reels": "s6v5802e5df0e935c4c6c8222459624cf9bf5",
     "After Reels": "s6v580943e57bab0f4d4786fe4aebcbff671e",
     "Closeup Photo One": "dp2c08f3af2dff1f8489ba0b8dd7b6b3a4e23",
@@ -80,6 +80,7 @@ ZOHO_FOLDERS = {
     "Closeup Photo One Video": "dp2c01030cd1615ee4f929299945a21767826",
     "Closeup Photo Two Video": "dp2c07273014cfd5242fc8b0aff6b5d7deaf1",
     "Combined Closeup Videos": "dp2c071305f65b3c14e7ba07da0e99ca8e15d",
+    "Product Closeup Photos": "w71jr25f4c097c98647f190f790ba29dc3a3d",
     # Final-phase outputs. Hardcoded to the user's Zoho folders; the
     # matching env vars still override if explicitly set.
     "CTA": os.environ.get(
