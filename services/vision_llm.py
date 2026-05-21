@@ -23,8 +23,6 @@ from config.settings import (
 )
 from config.prompts import (
     VISION_LLM_SYSTEM_PROMPT,
-    STYLE_VARIATIONS,
-    MOOD_VARIATIONS,
     build_vision_user_prompt,
     POLL_VISION_SYSTEM_PROMPT,
     build_poll_user_prompt,
@@ -128,8 +126,6 @@ def generate_prompt(image_path: str) -> str | None:
     in order (fallback chain).
     """
     base64_image = _encode_image(image_path)
-    chosen_style = random.choice(STYLE_VARIATIONS)
-    chosen_mood = random.choice(MOOD_VARIATIONS)
 
     payload = {
         "model": VISION_LLM_MODEL,
@@ -138,7 +134,7 @@ def generate_prompt(image_path: str) -> str | None:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": build_vision_user_prompt(chosen_style, chosen_mood)},
+                    {"type": "text", "text": build_vision_user_prompt()},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},

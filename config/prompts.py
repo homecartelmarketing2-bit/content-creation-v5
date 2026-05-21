@@ -50,38 +50,41 @@ MOODBOARD_PROMPT = (
 
 # ── Vision LLM System Prompt ───────────────────────────────────────
 VISION_LLM_SYSTEM_PROMPT = (
-    "You are a strict image-to-text interior scene writer for a local vision-language model.\n"
-    "Your task is to output a compact interior description in exactly ONE sentence.\n\n"
+    "You are a faithful image-to-text interior scene writer for a local vision-language model.\n"
+    "Your task is to look at the uploaded reference photo and output a compact, accurate "
+    "description of the SAME room in exactly ONE sentence.\n\n"
 
     "<TOP_PRIORITY_RULE>\n"
-    "NEVER mention any electric lighting or lighting fixture under any circumstance.\n"
+    "NEVER mention any electric lighting or lighting fixture under any circumstance, even if "
+    "one is clearly visible in the photo.\n"
     "Forbidden objects and words include: lamp, lamps, chandelier, pendant light, ceiling light, bulb, sconce, spotlight, track light, lantern, fan light, ceiling fan, fixture, lighting, illuminated, glowing.\n"
-    "If any such object appears in the image, you must completely ignore it as if it does not exist.\n"
+    "If any such object appears in the image, completely ignore it as if it does not exist — describe everything else faithfully but leave the lighting out.\n"
     "</TOP_PRIORITY_RULE>\n\n"
 
     "<SCENE_POLICY>\n"
-    "Create a new believable interior scene inspired only by the room structure, furniture placement, and general layout of the image.\n"
-    "Do not accurately describe the uploaded image.\n"
-    "Do not mention décor that is not clearly necessary.\n"
-    "Do not invent people, animals, text, brands, reflections, mirrors, electronics, or appliances unless essential to the room type.\n"
+    "Describe the actual room shown in the image as accurately as possible: keep its real "
+    "wall colors, flooring, furniture, materials, layout, perspective, and overall mood.\n"
+    "Do NOT invent a different room and do NOT change the style of the space — stay true to "
+    "what the photo shows, only omitting the lighting.\n"
+    "Do not invent people, animals, text, brands, reflections, mirrors, electronics, or appliances that are not actually present in the photo.\n"
     "</SCENE_POLICY>\n\n"
 
     "<ALLOWED_DETAILS>\n"
-    "You may describe only:\n"
+    "Describe what you actually see, focusing on:\n"
     "- room type\n"
-    "- wall color\n"
+    "- wall color and finish\n"
     "- floor color and material\n"
-    "- ceiling appearance only as bare/plain/smooth if needed\n"
+    "- the real furniture pieces and their placement\n"
+    "- decor, textiles, plants, rugs, and materials that are genuinely visible\n"
+    "- ceiling appearance\n"
     "- window daylight or sunlight\n"
-    "- simple non-electric furniture\n"
-    "- fabric/material textures\n"
-    "- overall natural atmosphere\n"
+    "- the room's actual color palette and atmosphere\n"
     "</ALLOWED_DETAILS>\n\n"
 
     "<STYLE_RULES>\n"
-    "Keep the tone visual, clean, and realistic.\n"
-    "Use natural sunlight only: morning sunlight, soft daylight, warm sunlight, diffused sunlight, indirect daylight.\n"
-    "Keep walls and ceiling bare, plain, and free of decorations or mounted objects.\n"
+    "Keep the tone visual, clean, and realistic — describe the photo, do not embellish it.\n"
+    "Describe daylight and natural light only (e.g. soft daylight, warm sunlight, diffused "
+    "daylight); never describe artificial light sources.\n"
     "Do not use poetic language.\n"
     "Do not use lists.\n"
     "Do not use markdown.\n"
@@ -99,8 +102,8 @@ VISION_LLM_SYSTEM_PROMPT = (
     "<SELF_CHECK>\n"
     "Before answering, silently verify:\n"
     "1. The sentence contains no forbidden lighting words.\n"
-    "2. The scene is indoors.\n"
-    "3. The sentence mentions only allowed details.\n"
+    "2. The description matches the actual room in the photo (same colors, furniture, layout).\n"
+    "3. Nothing was invented that is not visible in the photo.\n"
     "4. The sentence is exactly one sentence.\n"
     "</SELF_CHECK>"
 )
@@ -123,15 +126,25 @@ MOOD_VARIATIONS = [
 ]
 
 
-def build_vision_user_prompt(style: str, mood: str) -> str:
-    """Builds the user-facing prompt sent alongside the reference image."""
+def build_vision_user_prompt(style: str = "", mood: str = "") -> str:
+    """Builds the user-facing prompt sent alongside the reference image.
+
+    Faithful mode: the prompt describes the ACTUAL room in the reference
+    photo (real colors, furniture, layout, perspective, atmosphere) and
+    only omits any lighting. The ``style`` / ``mood`` arguments are kept
+    for backward compatibility but are no longer injected so the output
+    stays true to the photo.
+    """
     return (
-        f"Generate exactly ONE sentence describing a new interior design scene.\n\n"
-        f"Target Style: {style}\n"
-        f"Target Mood: {mood}\n\n"
-        f"REMINDER: Your scene must have ZERO electrical lighting! "
-        f"Ensure walls, ceilings, and tables are completely bare of any lamps or fixtures. "
-        f"Output ONLY the plain text sentence now."
+        "Look at the reference photo and generate exactly ONE sentence that "
+        "accurately describes the SAME interior scene shown in it.\n\n"
+        "Capture the room's real wall colors, flooring, furniture, materials, "
+        "decor, layout, perspective, and overall mood as faithfully as "
+        "possible. Do not invent a different room.\n\n"
+        "REMINDER: Leave out ALL lighting and fixtures entirely — no lamps, "
+        "chandeliers, pendants, ceiling lights, or fans, even if they appear "
+        "in the photo. Describe natural daylight only.\n\n"
+        "Output ONLY the plain text sentence now."
     )
 
 
@@ -239,4 +252,3 @@ POLL_IMAGE_PROMPT_TEMPLATE = (
     "- Do NOT show any furniture, lighting fixtures, room scenes, "
     "hands, people, or product mockups."
 )
-
