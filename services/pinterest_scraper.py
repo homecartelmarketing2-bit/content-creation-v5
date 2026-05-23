@@ -56,6 +56,90 @@ def ensure_marketing_photos() -> dict:
     return result
 
 
+def _scrape_pinterest_photos_requests(limit: int, manifest: dict, urls_seen: set, hashes_seen: set) -> int:
+    import urllib.parse
+    downloaded = 0
+    
+    terms = list(PINTEREST_SEARCH_TERMS)
+    random.shuffle(terms)
+    
+    for term in terms:
+        if downloaded >= limit:
+            break
+            
+        print(f"[INFO] Scraping Pinterest search (HTTP Requests): {term}")
+        
+        args = {
+            'options': {
+                'query': term,
+                'bookmarks': [''],
+            },
+            'context': {},
+        }
+        data_param = json.dumps(args)
+        url = f"https://www.pinterest.com/resource/BaseSearchResource/get/?data={urllib.parse.quote(data_param)}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            'X-Pinterest-AppState': 'active',
+            'X-Pinterest-Source-Url': f'/search/pins/?q={urllib.parse.quote(term)}',
+            'X-Pinterest-PWS-Handler': 'www/search/pins.js',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.pinterest.com/',
+        }
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            if response.status_code != 200:
+                print(f"[WARN] HTTP Request for '{term}' returned status code {response.status_code}")
+                continue
+                
+            res_json = response.json()
+            resource_response = res_json.get("resource_response", {})
+            data_list = resource_response.get("data", [])
+            
+            results = []
+            if isinstance(data_list, list):
+                results = data_list
+            elif isinstance(data_list, dict):
+                results = data_list.get("results", [])
+                
+            print(f"[INFO] Found {len(results)} potential pins in API response.")
+            
+            candidates = []
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                images = item.get("images")
+                if isinstance(images, dict):
+                    for size in ["originals", "736x", "600x", "474x"]:
+                        if size in images and isinstance(images[size], dict):
+                            url_img = images[size].get("url")
+                            if url_img:
+                                candidates.append(url_img)
+                                break
+                                
+            # Shuffle and download
+            random.shuffle(candidates)
+            for image_url in candidates:
+                if downloaded >= limit:
+                    break
+                if image_url in urls_seen:
+                    continue
+                saved = _download_image(image_url, urls_seen, hashes_seen, manifest)
+                urls_seen.add(image_url)
+                if saved:
+                    downloaded += 1
+                    print(f"[OK] Saved Pinterest photo (HTTP Requests): {os.path.basename(saved)}")
+                    
+        except Exception as exc:
+            print(f"[WARN] Error scraping '{term}' via HTTP Requests: {exc}")
+            
+    return downloaded
+
+
 def scrape_pinterest_photos(limit: int = PINTEREST_BATCH_SIZE) -> dict:
     os.makedirs(MARKETING_PHOTO_DIR, exist_ok=True)
     os.makedirs(PINTEREST_PROFILE_DIR, exist_ok=True)
@@ -64,61 +148,79 @@ def scrape_pinterest_photos(limit: int = PINTEREST_BATCH_SIZE) -> dict:
     urls_seen = set(manifest.get("urls", []))
     hashes_seen = set(manifest.get("hashes", []))
     downloaded = 0
-    candidates = []
 
+    from config.settings import PINTEREST_SCRAPER_METHOD
+
+    # 1. Run requests-based scraper
+    if PINTEREST_SCRAPER_METHOD == "requests":
+        try:
+            downloaded = _scrape_pinterest_photos_requests(limit, manifest, urls_seen, hashes_seen)
+            _save_manifest(manifest)
+            return {"scraped": True, "downloaded": downloaded, "available": count_available_photos()}
+        except Exception as err:
+            print(f"[ERROR] Pinterest HTTP requests scraping failed: {err}")
+            return {"scraped": False, "downloaded": 0, "available": count_available_photos(), "error": str(err)}
+
+    # 2. Run Playwright scraper
+    candidates = []
     from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as p:
-        launch_kwargs = {
-            "headless": PINTEREST_HEADLESS,
-            "viewport": {"width": 1365, "height": 900},
-            "args": ["--disable-blink-features=AutomationControlled"],
-        }
-        browser_path = _browser_executable()
-        if browser_path:
-            launch_kwargs["executable_path"] = browser_path
+    try:
+        with sync_playwright() as p:
+            launch_kwargs = {
+                "headless": PINTEREST_HEADLESS,
+                "viewport": {"width": 1365, "height": 900},
+                "args": ["--disable-blink-features=AutomationControlled"],
+            }
+            browser_path = _browser_executable()
+            if browser_path:
+                launch_kwargs["executable_path"] = browser_path
 
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=PINTEREST_PROFILE_DIR,
-            **launch_kwargs,
-        )
-        page = context.pages[0] if context.pages else context.new_page()
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=PINTEREST_PROFILE_DIR,
+                **launch_kwargs,
+            )
+            page = context.pages[0] if context.pages else context.new_page()
 
-        terms = list(PINTEREST_SEARCH_TERMS)
-        random.shuffle(terms)
-        for term in terms:
-            if downloaded >= limit:
-                break
-
-            search_url = f"https://www.pinterest.com/search/pins/?q={quote_plus(term)}"
-            print(f"[INFO] Scraping Pinterest search: {term}")
-            page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(3000)
-
-            for _ in range(PINTEREST_MAX_SCROLLS):
-                candidates.extend(_extract_image_urls(page))
-                random.shuffle(candidates)
-
-                while candidates and downloaded < limit:
-                    image_url = candidates.pop()
-                    if image_url in urls_seen:
-                        continue
-                    saved = _download_image(image_url, urls_seen, hashes_seen, manifest)
-                    urls_seen.add(image_url)
-                    if saved:
-                        downloaded += 1
-                        print(f"[OK] Saved Pinterest photo: {os.path.basename(saved)}")
-
+            terms = list(PINTEREST_SEARCH_TERMS)
+            random.shuffle(terms)
+            for term in terms:
                 if downloaded >= limit:
                     break
 
-                page.mouse.wheel(0, 2400)
-                page.wait_for_timeout(1500)
+                search_url = f"https://www.pinterest.com/search/pins/?q={quote_plus(term)}"
+                print(f"[INFO] Scraping Pinterest search: {term}")
+                page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
+                page.wait_for_timeout(3000)
 
-        context.close()
+                for _ in range(PINTEREST_MAX_SCROLLS):
+                    candidates.extend(_extract_image_urls(page))
+                    random.shuffle(candidates)
+
+                    while candidates and downloaded < limit:
+                        image_url = candidates.pop()
+                        if image_url in urls_seen:
+                            continue
+                        saved = _download_image(image_url, urls_seen, hashes_seen, manifest)
+                        urls_seen.add(image_url)
+                        if saved:
+                            downloaded += 1
+                            print(f"[OK] Saved Pinterest photo: {os.path.basename(saved)}")
+
+                    if downloaded >= limit:
+                        break
+
+                    page.mouse.wheel(0, 2400)
+                    page.wait_for_timeout(1500)
+
+            context.close()
+    except Exception as err:
+        print(f"[ERROR] Playwright scraper failed: {err}")
+        return {"scraped": False, "downloaded": downloaded, "available": count_available_photos(), "error": str(err)}
 
     _save_manifest(manifest)
     return {"scraped": True, "downloaded": downloaded, "available": count_available_photos()}
+
 
 
 def _extract_image_urls(page) -> list[str]:

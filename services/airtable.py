@@ -29,17 +29,25 @@ def _api_url(table_id: str) -> str:
 def get_next_unfinished_row(table_id: str):
     """
     Fetches ONE row whose Status is actionable.
+    For table tblDDmCs4S2ePxIfQ, only fetches rows where 'Styled Photo Prompt' is not empty.
     Returns (record_id, fields_dict) or (None, None).
     """
+    status_filter = (
+        "OR("
+        "{Status} = 'Standby', "
+        "{Status} = 'Processing Adding a Prompt', "
+        "{Status} = 'Complete Adding a Prompt', "
+        "{Status} = 'Processing'"
+        ")"
+    )
+    if table_id == "tblDDmCs4S2ePxIfQ":
+        # Only query rows where Styled Photo Prompt is not empty
+        formula = f"AND(NOT({{Styled Photo Prompt}} = ''), {status_filter})"
+    else:
+        formula = status_filter
+
     params = {
-        "filterByFormula": (
-            "OR("
-            "{Status} = 'Standby', "
-            "{Status} = 'Processing Adding a Prompt', "
-            "{Status} = 'Complete Adding a Prompt', "
-            "{Status} = 'Processing'"
-            ")"
-        ),
+        "filterByFormula": formula,
         "maxRecords": 1,
     }
     try:

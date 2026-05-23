@@ -12,16 +12,20 @@ CLOSEUP_VIDEO_PROMPT = "Slowly Rotating Around Camera Movement"
 # instead of stacking too many genre cues. Focuses on actual instruments
 # and a clear mood rather than marketing adjectives.
 MUSIC_PROMPT = (
-    "Soft ambient lo-fi instrumental. Mellow piano melody over warm pads "
-    "and a gentle, steady beat. Calm, cozy, modern home interior vibe. "
-    "Clean mix, no vocals, instrumental only."
+    "Upbeat luxury commercial background music. Warm acoustic guitar, "
+    "soft elegant piano, and a gentle inspiring modern pop beat. Clean, "
+    "sophisticated atmosphere for high-end home decor and interior design marketing. "
+    "Instrumental only, clean mix, no vocals."
 )
+
 
 # ── Closeup Photo Prompt ──────────────────────────────────────────
 CLOSEUP_PROMPT_TEMPLATE = (
     "Generate me a medium closeup photo of {item}, "
     "maintain the appearance of the item as is"
 )
+
+PRODUCT_CLOSEUP_FEEDS_PROMPT = "Use the first image strictly as a layout, composition, and crop reference. Extract the product (chandelier) from the second image and place it seamlessly into this exact layout style on a pure plain white background. [{caption}]"
 
 # ── Moodboard Prompt ────────────────────────────────────────────────
 MOODBOARD_PROMPT = (

@@ -49,7 +49,9 @@ KIE_QUERY_TASK_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 SUNO_API_KEY = os.environ.get("SUNO_API_KEY", "")
 SUNO_BASE_URL = "https://api.kie.ai"
 SUNO_GENERATE_URL = f"{SUNO_BASE_URL}/api/v1/generate/sounds"
+SUNO_QUERY_TASK_URL = f"{SUNO_BASE_URL}/api/v1/generate/record-info"
 SUNO_DEFAULT_MODEL = os.environ.get("SUNO_MODEL", "V5")
+
 SUNO_DEFAULT_TEMPO = int(os.environ.get("SUNO_TEMPO", "166"))
 SUNO_DEFAULT_KEY = os.environ.get("SUNO_KEY", "D#m")
 SUNO_SOUND_LOOP = _env_bool("SUNO_SOUND_LOOP", True)
@@ -67,31 +69,32 @@ ZOHO_TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
 ZOHO_UPLOAD_URL = "https://workdrive.zoho.com/api/v1/upload"
 
 ZOHO_FOLDERS = {
-    "Styled Photo": "s6v582b5a04cdd1574143b110a9ee16e91930",
+    "Styled Photo": "w3zku7ee0a7c3b0f54a66bc352f9ee4e5dd63",
     "Blended Image": "w3zku7ee0a7c3b0f54a66bc352f9ee4e5dd63",
-    "Moodboard": "s6v58f005606052d0473b852f61ae105f4afa",
-    "Styled Reels": "s6v58a88f0b597b734dd69a758fefe1d95bca",
+    "Moodboard": "w3zkuf14199afe01c4301bfaaee09d38bbaf6",
+    "Styled Reels": "ambg5a9cd6c71a8ae44448c105f0913c389eb",
     "Before and After Reels": "w3zku2c37afa890e347ce8b3e9b39df7b4745",
     "Before and After Feeds": "w71jrff1ea9e28789472cadbde915bd67fd08",
     "Before Reels": "s6v5802e5df0e935c4c6c8222459624cf9bf5",
     "After Reels": "s6v580943e57bab0f4d4786fe4aebcbff671e",
     "Closeup Photo One": "dp2c08f3af2dff1f8489ba0b8dd7b6b3a4e23",
     "Closeup Photo Two": "dp2c0db6c28ec7c70413db298737ef21245ec",
-    "Closeup Photo One Video": "dp2c01030cd1615ee4f929299945a21767826",
+    "Closeup Photo One Video": "ambg57d6506c1975f41fabba6bb9d1c10a2f5",
     "Closeup Photo Two Video": "dp2c07273014cfd5242fc8b0aff6b5d7deaf1",
-    "Combined Closeup Videos": "dp2c071305f65b3c14e7ba07da0e99ca8e15d",
+    "Combined Closeup Videos": "ambg5989559df124d4a5ab129f2e97346e7b0",
     "Product Closeup Photos": "w71jr25f4c097c98647f190f790ba29dc3a3d",
     # Final-phase outputs. Hardcoded to the user's Zoho folders; the
-    # matching env vars still override if explicitly set.
-    "CTA": os.environ.get(
-        "ZOHO_FOLDER_CTA",
-        "h8atd1190158bb68e4930be8974c9abbe88c0",
-    ),
-    "Polls and Slider": os.environ.get(
-        "ZOHO_FOLDER_POLLS_AND_SLIDER",
-        "h8atddf8980c8b6be40fb84d65e46b0ca4d61",
-    ),
+    # matching env vars still override if explicitly set and not empty.
+    "CTA": os.environ.get("ZOHO_FOLDER_CTA", "").strip() or "h8atd1190158bb68e4930be8974c9abbe88c0",
+    "Polls and Slider": os.environ.get("ZOHO_FOLDER_POLLS_AND_SLIDER", "").strip() or "h8atddf8980c8b6be40fb84d65e46b0ca4d61",
+    "Styled Stories": os.environ.get("ZOHO_FOLDER_STYLED_STORIES", "").strip() or "w71jrded080384fb44802b449d10beb2ca3dc",
+    "Sliders": os.environ.get("ZOHO_FOLDER_SLIDERS", "").strip() or "w71jr23767b7a3e3d48f282529d084d342542",
+    "Tips Reels": os.environ.get("ZOHO_FOLDER_TIPS_REELS", "").strip() or "bhqwjef405f146ae042968a4028c97ff9584c",
 }
+
+# ── ElevenLabs Voiceover (Phase 14: Tips Reels) ────────────────────
+KIE_VOICE_ID = os.environ.get("KIE_VOICE_ID", "").strip() or "EkK5I93UQWFDigLMpZcX"
+KIE_STABILITY = _env_float("KIE_STABILITY", 0.5)
 
 # ── Shop Now Overlay (Phase 12) ────────────────────────────────────
 SHOP_NOW_TEXT = os.environ.get("SHOP_NOW_TEXT", "SHOP NOW")
@@ -160,6 +163,7 @@ PINTEREST_PROFILE_DIR = (
     else os.path.join(RUNTIME_ROOT, _PINTEREST_PROFILE_DIR_RAW)
 )
 PINTEREST_BROWSER_EXECUTABLE = os.environ.get("PINTEREST_BROWSER_EXECUTABLE", "").strip() or None
+PINTEREST_SCRAPER_METHOD = os.environ.get("PINTEREST_SCRAPER_METHOD", "requests").strip().lower()
 PHOTO_USAGE_MANIFEST = os.environ.get(
     "PHOTO_USAGE_MANIFEST",
     os.path.join(DATA_DIR, "photo_usage.json"),

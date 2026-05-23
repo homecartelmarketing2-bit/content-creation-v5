@@ -22,12 +22,14 @@ from config.settings import (
     POLL_INTERVAL,
     POLL_MAX_WAIT,
     SUNO_GENERATE_URL,
+    SUNO_QUERY_TASK_URL,
     SUNO_DEFAULT_MODEL,
     SUNO_DEFAULT_TEMPO,
     SUNO_DEFAULT_KEY,
     SUNO_SOUND_LOOP,
     SUNO_GRAB_LYRICS,
 )
+
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -46,7 +48,8 @@ def _create_task(payload: dict) -> str | None:
         data = resp.json()
         if data.get("code") == 200:
             return data["data"]["taskId"]
-        print(f"[ERROR] Kie.ai: {data.get('message')}")
+        msg = data.get("msg") or data.get("message") or "Unknown error"
+        print(f"[ERROR] Kie.ai: {msg}")
     except requests.RequestException as e:
         print(f"[ERROR] Creating Kie.ai task: {e}")
     return None
@@ -54,31 +57,50 @@ def _create_task(payload: dict) -> str | None:
 
 # ── Task Creators ───────────────────────────────────────────────────
 
-def create_image_task(prompt: str) -> str | None:
+def create_image_task(prompt: str, aspect_ratio: str = None, resolution: str = None) -> str | None:
     """Creates a text-to-image task and returns the taskId."""
+    from config.settings import IMAGE_ASPECT_RATIO, IMAGE_RESOLUTION
+    ar = aspect_ratio or IMAGE_ASPECT_RATIO
+    res = resolution or IMAGE_RESOLUTION
     return _create_task({
         "model": IMAGE_MODEL,
         "input": {
             "prompt": prompt,
-            "aspect_ratio": IMAGE_ASPECT_RATIO,
-            "resolution": IMAGE_RESOLUTION,
+            "aspect_ratio": ar,
+            "resolution": res,
             "output_format": IMAGE_FORMAT,
         },
     })
 
 
-def create_blend_task(image_urls: list[str], prompt: str) -> str | None:
+def create_blend_task(image_urls: list[str], prompt: str, aspect_ratio: str = None, resolution: str = None) -> str | None:
     """Creates an image-blend task and returns the taskId."""
+    from config.settings import IMAGE_ASPECT_RATIO, IMAGE_RESOLUTION
+    ar = aspect_ratio or IMAGE_ASPECT_RATIO
+    res = resolution or IMAGE_RESOLUTION
     return _create_task({
         "model": IMAGE_MODEL,
         "input": {
             "prompt": prompt,
-            "aspect_ratio": IMAGE_ASPECT_RATIO,
-            "resolution": IMAGE_RESOLUTION,
+            "aspect_ratio": ar,
+            "resolution": res,
             "output_format": IMAGE_FORMAT,
             "image_input": image_urls,
         },
     })
+
+
+def create_gpt_image_task(image_urls: list[str], prompt: str) -> str | None:
+    """Creates an image task using the gpt-image-2-image-to-image model."""
+    return _create_task({
+        "model": "gpt-image-2-image-to-image",
+        "input": {
+            "prompt": prompt,
+            "input_urls": image_urls,
+            "aspect_ratio": "auto"
+        }
+    })
+
 
 
 def create_video_task(image_url: str, prompt: str) -> str | None:
@@ -97,17 +119,48 @@ def create_video_task(image_url: str, prompt: str) -> str | None:
 
 def create_music_task(prompt: str) -> str | None:
     """Creates a music generation task (Suno) and returns the taskId."""
-    # Note: Using the provided SUNO_GENERATE_URL which might be a createTask variant
-    return _create_task({
-        "model": SUNO_DEFAULT_MODEL,
-        "input": {
+    try:
+        payload = {
             "prompt": prompt,
-            "instrumental": True,
-            "tempo": SUNO_DEFAULT_TEMPO,
-            "key": SUNO_DEFAULT_KEY,
-            "loop": SUNO_SOUND_LOOP,
-            "grab_lyrics": SUNO_GRAB_LYRICS,
-        },
+            "model": SUNO_DEFAULT_MODEL,
+            "soundLoop": SUNO_SOUND_LOOP,
+            "soundTempo": SUNO_DEFAULT_TEMPO,
+            "soundKey": SUNO_DEFAULT_KEY,
+            "grabLyrics": SUNO_GRAB_LYRICS
+        }
+        resp = requests.post(SUNO_GENERATE_URL, headers=_headers(), json=payload)
+        data = resp.json()
+        
+        # Check if we successfully got a taskId inside the data object
+        task_id = data.get("data", {}).get("taskId")
+        if task_id:
+            return f"suno:{task_id}"
+
+            
+        msg = data.get("msg") or data.get("message") or "Unknown error"
+        print(f"[ERROR] Kie.ai sound generation: {msg}")
+    except Exception as e:
+        print(f"[ERROR] Creating Kie.ai music task: {e}")
+    return None
+
+
+
+def create_voiceover_task(text: str, voice_id: str = None) -> str | None:
+    """Creates an ElevenLabs text-to-speech voiceover task and returns the taskId."""
+    from config.settings import KIE_VOICE_ID, KIE_STABILITY
+    if not voice_id:
+        voice_id = KIE_VOICE_ID
+    return _create_task({
+        "model": "elevenlabs/text-to-dialogue-v3",
+        "input": {
+            "dialogue": [
+                {
+                    "text": text,
+                    "voice": voice_id,
+                }
+            ],
+            "stability": KIE_STABILITY,
+        }
     })
 
 
@@ -118,14 +171,24 @@ def poll_task_status(task_id: str) -> str | None:
     Polls until the task succeeds, fails, or times out.
     Returns the first result URL (image/video/audio) on success, or None on failure/timeout.
     """
-    print(f"[WAIT] Polling task {task_id[:12]}... (waiting indefinitely until success or fail)")
+    is_suno = False
+    display_id = task_id
+    query_url = KIE_QUERY_TASK_URL
+
+    if task_id.startswith("suno:"):
+        is_suno = True
+        task_id = task_id.split("suno:", 1)[1]
+        display_id = task_id
+        query_url = SUNO_QUERY_TASK_URL
+
+    print(f"[WAIT] Polling task {display_id[:12]}... (waiting indefinitely until success or fail)")
     start = time.time()
 
     while True:
         elapsed = int(time.time() - start)
         try:
             resp = requests.get(
-                KIE_QUERY_TASK_URL,
+                query_url,
                 headers=_headers(),
                 params={"taskId": task_id},
                 timeout=30,
@@ -133,14 +196,15 @@ def poll_task_status(task_id: str) -> str | None:
             data = resp.json()
 
             if data.get("code") != 200:
-                print(f"[ERROR] Kie.ai poll returned code {data.get('code')}: {data.get('message', 'Unknown')}")
+                msg = data.get("msg") or data.get("message") or "Unknown error"
+                print(f"[ERROR] Kie.ai poll returned code {data.get('code')}: {msg}")
                 return None
 
             state = data["data"].get("state", "").lower()
             status = data["data"].get("status", "").upper()
 
             if state == "success" or status == "SUCCESS":
-                print(f"\n[OK] Task {task_id[:12]} completed in {elapsed}s")
+                print(f"\n[OK] Task {display_id[:12]} completed in {elapsed}s")
                 
                 # Check for Suno audio URL in response
                 response_data = data["data"].get("response", {})
@@ -165,9 +229,10 @@ def poll_task_status(task_id: str) -> str | None:
 
             mins, secs = divmod(elapsed, 60)
             time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-            print(f"\r[WAIT] Task {task_id[:12]} state='{state}' (Elapsed: {time_str})        ", end="", flush=True)
+            # Use status if state is empty (Suno tasks do not return state)
+            print(f"\r[WAIT] Task {display_id[:12]} state='{state or status.lower()}' (Elapsed: {time_str})        ", end="", flush=True)
 
         except requests.RequestException as e:
             print(f"\n[WARN] Poll network error ({elapsed}s elapsed): {e}")
 
-        time.sleep(POLL_INTERVAL)
+        time.sleep(POLL_INTERVAL)

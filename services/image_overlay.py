@@ -17,14 +17,18 @@ from PIL import Image, ImageDraw, ImageFont
 
 _FONT_CANDIDATES = [
     # Windows
+    r"C:\Windows\Fonts\Poppins-Bold.ttf",
     r"C:\Windows\Fonts\arialbd.ttf",
     r"C:\Windows\Fonts\impact.ttf",
     r"C:\Windows\Fonts\Arial Bold.ttf",
     # macOS
+    "/System/Library/Fonts/Supplemental/Poppins-Bold.ttf",
+    "/Library/Fonts/Poppins-Bold.ttf",
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
     "/Library/Fonts/Arial Bold.ttf",
     "/System/Library/Fonts/HelveticaNeue.ttc",
     # Linux (Debian/Ubuntu)
+    "/usr/share/fonts/truetype/poppins/Poppins-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
@@ -35,13 +39,17 @@ _FONT_CANDIDATES = [
 # brand watermark. Falls through to bold if no regular font is found.
 _REGULAR_FONT_CANDIDATES = [
     # Windows
+    r"C:\Windows\Fonts\Poppins-Regular.ttf",
     r"C:\Windows\Fonts\arial.ttf",
     r"C:\Windows\Fonts\segoeui.ttf",
     # macOS
+    "/System/Library/Fonts/Supplemental/Poppins-Regular.ttf",
+    "/Library/Fonts/Poppins-Regular.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial.ttf",
     "/System/Library/Fonts/HelveticaNeue.ttc",
     # Linux
+    "/usr/share/fonts/truetype/poppins/Poppins-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
@@ -422,3 +430,46 @@ def make_watermarked_image(
         opacity=opacity,
         jpeg_quality=jpeg_quality,
     )
+
+
+def fit_image_to_9_16(
+    input_path: str,
+    output_path: str,
+    *,
+    target_width: int = 1080,
+    target_height: int = 1920,
+    jpeg_quality: int = 95,
+) -> str | None:
+    """Resizes and center-crops the image to fit exactly a 9:16 layout without distortion or padding."""
+    if not os.path.exists(input_path):
+        print(f"[ERROR] fit_image_to_9_16: Source image missing: {input_path}")
+        return None
+
+    try:
+        with Image.open(input_path) as src:
+            src_rgba = src.convert("RGBA")
+            w, h = src_rgba.size
+
+            # Scale source image to cover the target dimensions (center crop)
+            scale = max(target_width / w, target_height / h)
+            new_w = max(1, int(w * scale))
+            new_h = max(1, int(h * scale))
+            resized = src_rgba.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            
+            # Crop to target dimensions
+            left = (new_w - target_width) // 2
+            top = (new_h - target_height) // 2
+            final_img = resized.crop((left, top, left + target_width, top + target_height))
+
+            # Save
+            ext = os.path.splitext(output_path)[1].lower()
+            if ext in {".jpg", ".jpeg"}:
+                final_img.convert("RGB").save(output_path, "JPEG", quality=jpeg_quality)
+            else:
+                final_img.save(output_path)
+            
+            print(f"[OK] 9:16 exact cropped image written: {output_path}")
+            return output_path
+    except Exception as e:
+        print(f"[ERROR] fit_image_to_9_16: {e}")
+        return None

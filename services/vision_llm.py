@@ -242,3 +242,152 @@ def generate_poll(context: str = "") -> dict | None:
 
     print("[ERROR] Poll generation via Vision LLM failed")
     return None
+
+
+def generate_product_closeup_caption(image_path: str) -> str:
+    """
+    Sends a reference photo to the local vision LLM and returns a
+    short, catchy product caption.
+    """
+    if not os.path.exists(image_path):
+        print(f"[WARN] Closeup caption source missing: {image_path}. Using fallback.")
+        return "Elevate your space with this stunning centerpiece"
+
+    try:
+        base64_image = _encode_image(image_path)
+    except Exception as e:
+        print(f"[WARN] Base64 image encoding failed: {e}. Using fallback.")
+        return "Modern luxury meets timeless design"
+
+    system_prompt = (
+        "You are an expert luxury home decor copywriter. Look at the "
+        "provided room/chandelier photo and generate a short, catchy, "
+        "and premium caption (3 to 8 words) for a product catalog. "
+        "Output ONLY the raw caption text, without any quotation marks, "
+        "brackets, or introductory text."
+    )
+
+    user_prompt = "Give me a short, catchy, luxury product caption for this interior lighting piece."
+
+    payload = {
+        "model": VISION_LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    },
+                ],
+            },
+        ],
+        "max_tokens": 30,
+        "temperature": 0.8,
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    for attempt in range(3):
+        for endpoint in VISION_LLM_ENDPOINTS:
+            try:
+                resp = requests.post(endpoint, headers=headers, json=payload, timeout=VISION_LLM_TIMEOUT)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        raw = choices[0]["message"]["content"]
+                        cleaned = _clean_prompt(raw)
+                        if cleaned:
+                            return cleaned
+            except requests.RequestException:
+                continue
+
+    print("[WARN] Vision LLM closeup caption generation failed. Using default.")
+    fallbacks = [
+        "Elevate your space with this stunning centerpiece",
+        "Modern luxury meets timeless design",
+        "Illuminate your home with elegance",
+        "A bold statement for modern living",
+        "Sophisticated lighting for your dream space"
+    ]
+    return random.choice(fallbacks)
+
+
+def generate_styling_tip(image_path: str, context: str = "") -> str:
+    """
+    Sends a reference photo to the local vision LLM and returns a
+    creative interior-design tip of 6-to-12 words.
+    """
+    if not os.path.exists(image_path):
+        print(f"[WARN] Styling tip source missing: {image_path}. Using fallback.")
+        return "Layer lighting with floor lamps to add warmth and depth"
+
+    try:
+        base64_image = _encode_image(image_path)
+    except Exception as e:
+        print(f"[WARN] Base64 image encoding failed: {e}. Using fallback.")
+        return "Position lighting at eye level for a cozy ambiance"
+
+    system_prompt = (
+        "You are an expert interior designer and stylist. Your job is to look at "
+        "the provided room and lighting setup, and generate a brief, catchy styling tip "
+        "of exactly 6 to 12 words. Focus on a specific design tip related to "
+        "lighting, space, or decor harmony. Output ONLY the raw styling tip, without "
+        "any quotation marks, punctuation at the end, introductory text, or formatting."
+    )
+
+    user_prompt = (
+        "Analyze this interior design image. Give me a 6-to-12 word styling tip. "
+        "Focus on lighting or fixture layout. Return only the tip text."
+    )
+    if context:
+        user_prompt += f"\nContext: {context}"
+
+    payload = {
+        "model": VISION_LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    },
+                ],
+            },
+        ],
+        "max_tokens": 50,
+        "temperature": 0.8,
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    for attempt in range(3):
+        for endpoint in VISION_LLM_ENDPOINTS:
+            try:
+                resp = requests.post(endpoint, headers=headers, json=payload, timeout=VISION_LLM_TIMEOUT)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        raw = choices[0]["message"]["content"]
+                        cleaned = _clean_prompt(raw)
+                        if cleaned:
+                            return cleaned
+            except requests.RequestException:
+                continue  # try next endpoint
+
+    print("[WARN] Vision LLM styling tip generation failed. Using default tip.")
+    fallbacks = [
+        "Position lighting at eye level for a cozy ambiance",
+        "Layer lighting with floor lamps to add warmth and depth",
+        "Highlight cozy corners using warm ceiling light highlights",
+        "Combine pendant lights with ambient bulbs for chic vibes",
+        "Mix metals in fixtures to create modern design interest",
+    ]
+    return random.choice(fallbacks)

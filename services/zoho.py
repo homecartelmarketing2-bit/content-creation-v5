@@ -159,7 +159,7 @@ def upload_and_get_public_link(filepath: str, folder_key: str = "Before and Afte
     filename = os.path.basename(filepath)
 
     try:
-        print("[INFO] Uploading combined video to Zoho Drive...")
+        print(f"[INFO] Uploading '{filename}' to Zoho Drive and generating public link...")
         resp = _upload_file(token, filepath, filename, folder_id)
 
         if not resp or resp.status_code not in (200, 201):
@@ -289,11 +289,22 @@ def _create_share_link(token: str, resource_id: str, filename: str) -> str | Non
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=30)
         if resp.status_code in (200, 201):
-            link = resp.json().get("data", {}).get("attributes", {}).get("link", "")
+            attrs = resp.json().get("data", {}).get("attributes", {})
+            link = attrs.get("download_url") or attrs.get("link", "")
             if link:
-                download_url = link.rstrip("/") + "?download=true"
+                if "/download" in link.lower():
+                    download_url = link.rstrip("/")
+                else:
+                    download_url = link.rstrip("/") + "/download"
+                
+                if "?" in download_url:
+                    download_url += "&directDownload=true"
+                else:
+                    download_url += "?directDownload=true"
+
                 print(f"[OK] Public download link: {download_url}")
                 return download_url
+
             print(f"[WARN] No link in share response: {resp.text[:200]}")
         else:
             print(f"[WARN] Share link creation failed: {resp.status_code} {resp.text[:200]}")
