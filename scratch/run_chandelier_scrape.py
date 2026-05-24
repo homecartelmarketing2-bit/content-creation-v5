@@ -12,12 +12,15 @@ from dotenv import load_dotenv
 import config.settings as settings
 from services.airtable import (
     get_next_empty_reference_row,
+    refetch_record,
     update_field,
     update_status,
     upload_attachment_file,
 )
+from services.image_overlay import make_watermarked_image
 from services.fal_image import generate_room_interiors
 from services.kie import create_gpt_image_task, query_task_once
+from services.video import cleanup_temp_files, download
 from services.pinterest_scraper import scrape_pinterest_photos
 from services.vision_llm import evaluate_photo_quality, generate_prompt
 
@@ -51,10 +54,51 @@ def _move_unique(src_path: str, dest_dir: str) -> str:
     return dest_path
 
 
+def _append_blended_attachment(record_id: str, image_url: str, idx: int) -> bool:
+    raw_path = download(image_url, f"{record_id}_blended_{idx}_raw.png")
+    if not raw_path:
+        print(f"[WARN] Could not download blend {idx}; attaching raw URL instead.")
+        fields = refetch_record(TABLE_ID, record_id)
+        existing = fields.get("Blended Image") or []
+        return update_field(TABLE_ID, record_id, "Blended Image", existing + [{"url": image_url}])
+
+    watermarked_path = make_watermarked_image(
+        raw_path,
+        record_id,
+        output_basename=f"{record_id}_blended_{idx}",
+        extension=".jpg",
+        watermark_path=settings.BRAND_WATERMARK_PATH,
+        line1=settings.BRAND_WATERMARK_LINE1,
+        line2=settings.BRAND_WATERMARK_LINE2,
+        width_ratio=settings.BRAND_WATERMARK_WIDTH_RATIO,
+        position=settings.BRAND_WATERMARK_POSITION,
+        horizontal_padding_ratio=settings.BRAND_WATERMARK_HORIZONTAL_PADDING_RATIO,
+        vertical_padding_ratio=settings.BRAND_WATERMARK_VERTICAL_PADDING_RATIO,
+        opacity=settings.BRAND_WATERMARK_OPACITY,
+        jpeg_quality=settings.BRAND_WATERMARK_JPEG_QUALITY,
+    )
+
+    if not watermarked_path:
+        print(f"[WARN] Could not watermark blend {idx}; attaching raw URL instead.")
+        fields = refetch_record(TABLE_ID, record_id)
+        existing = fields.get("Blended Image") or []
+        cleanup_temp_files(raw_path)
+        return update_field(TABLE_ID, record_id, "Blended Image", existing + [{"url": image_url}])
+
+    attached = upload_attachment_file(
+        record_id,
+        "Blended Image",
+        watermarked_path,
+        content_type="image/jpeg",
+    )
+    cleanup_temp_files(raw_path, watermarked_path)
+    return attached
+
+
 def _run_blended_images(record_id: str, room_urls: list[str], furniture_url: str) -> bool:
     print(f"[INFO] Starting {len(room_urls)} GPT Image 2 blend task(s)...")
     pending: dict[str, int] = {}
-    completed_urls: list[str] = []
+    completed_count = 0
 
     for idx, room_url in enumerate(room_urls, start=1):
         task_id = create_gpt_image_task(
@@ -82,14 +126,11 @@ def _run_blended_images(record_id: str, room_urls: list[str], furniture_url: str
 
             pending.pop(task_id, None)
             if state == "success" and url:
-                completed_urls.append(url)
-                update_field(
-                    TABLE_ID,
-                    record_id,
-                    "Blended Image",
-                    [{"url": completed_url} for completed_url in completed_urls],
-                )
-                print(f"[OK] Blend task {idx} complete. Blended Image now has {len(completed_urls)} attachment(s).")
+                if _append_blended_attachment(record_id, url, idx):
+                    completed_count += 1
+                    print(f"[OK] Blend task {idx} complete. Watermarked image attached to Blended Image ({completed_count}/{len(room_urls)}).")
+                else:
+                    print(f"[WARN] Blend task {idx} completed but Airtable upload failed.")
             else:
                 print(f"[WARN] Blend task {idx} failed.")
 
@@ -101,7 +142,7 @@ def _run_blended_images(record_id: str, room_urls: list[str], furniture_url: str
             print(f"[WAIT] {len(pending)} blend task(s) still running ({elapsed}s elapsed)...")
             time.sleep(settings.POLL_INTERVAL)
 
-    return len(completed_urls) == len(room_urls)
+    return completed_count == len(room_urls)
 
 
 def _attach_approved_photo_to_airtable(photo_path: str) -> bool:
