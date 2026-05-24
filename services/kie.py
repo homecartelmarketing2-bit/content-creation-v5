@@ -90,15 +90,24 @@ def create_blend_task(image_urls: list[str], prompt: str, aspect_ratio: str = No
     })
 
 
-def create_gpt_image_task(image_urls: list[str], prompt: str) -> str | None:
+def create_gpt_image_task(
+    image_urls: list[str],
+    prompt: str,
+    aspect_ratio: str = "auto",
+    resolution: str | None = None,
+) -> str | None:
     """Creates an image task using the gpt-image-2-image-to-image model."""
+    task_input = {
+        "prompt": prompt,
+        "input_urls": image_urls,
+        "aspect_ratio": aspect_ratio,
+    }
+    if resolution:
+        task_input["resolution"] = resolution
+
     return _create_task({
         "model": "gpt-image-2-image-to-image",
-        "input": {
-            "prompt": prompt,
-            "input_urls": image_urls,
-            "aspect_ratio": "auto"
-        }
+        "input": task_input,
     })
 
 
@@ -165,6 +174,46 @@ def create_voiceover_task(text: str, voice_id: str = None) -> str | None:
 
 
 # ── Polling ─────────────────────────────────────────────────────────
+
+def query_task_once(task_id: str) -> tuple[str, str | None]:
+    """Returns (pending|success|failed|error, result_url)."""
+    try:
+        resp = requests.get(
+            KIE_QUERY_TASK_URL,
+            headers=_headers(),
+            params={"taskId": task_id},
+            timeout=30,
+        )
+        data = resp.json()
+
+        if data.get("code") != 200:
+            msg = data.get("msg") or data.get("message") or "Unknown error"
+            print(f"[ERROR] Kie.ai poll returned code {data.get('code')}: {msg}")
+            return "error", None
+
+        task_data = data.get("data", {})
+        state = task_data.get("state", "").lower()
+        status = task_data.get("status", "").upper()
+
+        if state == "success" or status == "SUCCESS":
+            result = task_data.get("resultJson", {})
+            if isinstance(result, str):
+                try:
+                    result = json.loads(result)
+                except json.JSONDecodeError:
+                    result = {}
+            urls = result.get("resultUrls", [])
+            return "success", urls[0] if urls else None
+
+        if state in ["failed", "fail"] or status in ["FAILED", "FAIL"]:
+            print(f"[ERROR] Kie.ai task failed: {task_data.get('failMsg', 'Unknown')}")
+            return "failed", None
+
+        return "pending", None
+    except requests.RequestException as e:
+        print(f"[WARN] Kie.ai poll network error: {e}")
+        return "error", None
+
 
 def poll_task_status(task_id: str) -> str | None:
     """
@@ -235,4 +284,4 @@ def poll_task_status(task_id: str) -> str | None:
         except requests.RequestException as e:
             print(f"\n[WARN] Poll network error ({elapsed}s elapsed): {e}")
 
-        time.sleep(POLL_INTERVAL)
+        time.sleep(POLL_INTERVAL)

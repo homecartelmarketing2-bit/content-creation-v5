@@ -29,7 +29,8 @@ def _api_url(table_id: str) -> str:
 def get_next_unfinished_row(table_id: str):
     """
     Fetches ONE row whose Status is actionable.
-    For table tblDDmCs4S2ePxIfQ, only fetches rows where 'Styled Photo Prompt' is not empty.
+    For table tblDDmCs4S2ePxIfQ, only fetches rows where 'Styled Photo Prompt'
+    is not empty and 'Room Interior' is still empty.
     Returns (record_id, fields_dict) or (None, None).
     """
     status_filter = (
@@ -41,8 +42,13 @@ def get_next_unfinished_row(table_id: str):
         ")"
     )
     if table_id == "tblDDmCs4S2ePxIfQ":
-        # Only query rows where Styled Photo Prompt is not empty
-        formula = f"AND(NOT({{Styled Photo Prompt}} = ''), {status_filter})"
+        formula = (
+            "AND("
+            "NOT({Styled Photo Prompt} = ''), "
+            "OR({Room Interior} = BLANK(), {Room Interior} = ''), "
+            f"{status_filter}"
+            ")"
+        )
     else:
         formula = status_filter
 
@@ -60,6 +66,39 @@ def get_next_unfinished_row(table_id: str):
         return None, None
     except requests.RequestException as e:
         print(f"[ERROR] Fetching unfinished row: {e}")
+        return None, None
+
+
+def get_next_empty_reference_row(table_id: str):
+    """
+    Fetches one row ready to receive a new reference photo.
+    The row must have a Furniture Item and empty Reference Photo,
+    Styled Photo Prompt, Room Interior, and Blended Image fields.
+    """
+    formula = (
+        "AND("
+        "OR({Reference Photo} = BLANK(), {Reference Photo} = ''), "
+        "OR({Styled Photo Prompt} = BLANK(), {Styled Photo Prompt} = ''), "
+        "OR({Room Interior} = BLANK(), {Room Interior} = ''), "
+        "OR({Blended Image} = BLANK(), {Blended Image} = ''), "
+        "NOT({Furniture Item} = BLANK()), "
+        "OR({Status} = BLANK(), {Status} = '', {Status} = 'Standby')"
+        ")"
+    )
+    params = {
+        "filterByFormula": formula,
+        "maxRecords": 1,
+    }
+    try:
+        resp = requests.get(_api_url(table_id), headers=_headers(), params=params, timeout=60)
+        resp.raise_for_status()
+        records = resp.json().get("records", [])
+        if records:
+            rec = records[0]
+            return rec["id"], rec.get("fields", {})
+        return None, None
+    except requests.RequestException as e:
+        print(f"[ERROR] Fetching empty reference row: {e}")
         return None, None
 
 

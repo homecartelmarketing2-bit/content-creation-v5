@@ -6,3 +6,4 @@ moviepy
 playwright
 imageio
 imageio-ffmpeg
+fal-client

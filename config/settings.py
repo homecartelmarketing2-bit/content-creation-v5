@@ -45,6 +45,14 @@ KIE_API_KEY = os.environ["KIE_API_KEY"]
 KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 KIE_QUERY_TASK_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 
+# fal.ai
+FAL_KEY = os.environ.get("FAL_KEY", "").strip()
+FAL_MODEL = os.environ.get("FAL_MODEL", "fal-ai/flux/schnell").strip()
+FAL_NUM_IMAGES = _env_int("FAL_NUM_IMAGES", 4)
+FAL_IMAGE_SIZE = os.environ.get("FAL_IMAGE_SIZE", "portrait_4_3").strip()
+FAL_OUTPUT_FORMAT = os.environ.get("FAL_OUTPUT_FORMAT", "jpeg").strip()
+FAL_ACCELERATION = os.environ.get("FAL_ACCELERATION", "none").strip()
+
 # ── Suno / Music Generation (via Kie.ai) ───────────────────────────
 SUNO_API_KEY = os.environ.get("SUNO_API_KEY", "")
 SUNO_BASE_URL = "https://api.kie.ai"
@@ -137,12 +145,12 @@ VISION_LLM_ENDPOINTS = os.environ.get(
     "VISION_LLM_ENDPOINTS",
     "http://127.0.0.1:1234/v1/chat/completions",
 ).split(",")
-VISION_LLM_TIMEOUT = 120
+VISION_LLM_TIMEOUT = _env_int("VISION_LLM_TIMEOUT", 600)
 
 # ── Local Photo Directory ───────────────────────────────────────────
 MARKETING_PHOTO_DIR = os.environ.get(
     "MARKETING_PHOTO_DIR",
-    r"C:\Users\oscar\OneDrive\Desktop\Marketing Photos",
+    r"C:\Users\pobre\Downloads\Telegram Desktop\Scrape Photos",
 )
 LOCAL_PHOTO_DIR = MARKETING_PHOTO_DIR
 PINTEREST_SEARCH_TERMS = _env_csv(

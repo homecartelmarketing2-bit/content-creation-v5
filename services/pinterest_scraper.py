@@ -29,7 +29,8 @@ MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MANIFEST_NAME = ".pinterest_scrape_manifest.json"
 
 
-def count_available_photos(folder: str = MARKETING_PHOTO_DIR) -> int:
+def count_available_photos(folder: str | None = None) -> int:
+    folder = folder or MARKETING_PHOTO_DIR
     if not os.path.isdir(folder):
         return 0
     return sum(1 for name in os.listdir(folder) if name.lower().endswith(VALID_EXTENSIONS))

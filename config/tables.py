@@ -103,10 +103,12 @@ DEFAULT_FIELD_MAPPING = {
 # Table-specific overrides
 TABLE_FIELD_MAPPINGS = {
     "tblDDmCs4S2ePxIfQ": {
+        "Reference Photo": "Reference Photo",
+        "Room Interior": "Room Interior",
         "Styled Photo Prompt": "Styled Photo Prompt",
-        "Styled Photo": "Styled Photo",                # Generated room interior backdrop
-        "Styled Photo URL": "Styled Photo URL",            # URL of room interior
-        "Styled Photo Raw URL": "Styled Photo Raw URL",    # Unwatermarked image for Before Reels video
+        "Styled Photo": "Room Interior",                # Generated room interior backdrop
+        "Styled Photo URL": None,
+        "Styled Photo Raw URL": None,
         "Furniture Item": "Furniture Item",
         "Furniture Item2": None,
         "Blended Image": "Blended Image",                # Blended room interior + Chandelier
