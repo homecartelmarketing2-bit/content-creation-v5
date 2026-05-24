@@ -20,6 +20,7 @@ from config.settings import (
     VISION_LLM_TIMEOUT,
     LOCAL_PHOTO_DIR,
     PHOTO_USAGE_MANIFEST,
+    PROJECT_ROOT,
 )
 from config.prompts import (
     VISION_LLM_SYSTEM_PROMPT,
@@ -391,3 +392,96 @@ def generate_styling_tip(image_path: str, context: str = "") -> str:
         "Mix metals in fixtures to create modern design interest",
     ]
     return random.choice(fallbacks)
+
+
+def evaluate_photo_quality(image_path: str, item_name: str = "") -> dict | None:
+    """
+    Evaluates whether a scraped photo is suitable for the Chandelier workflow.
+    Returns the parsed LLM JSON, or None if the LLM cannot produce a decision.
+    """
+    if not os.path.exists(image_path):
+        print(f"[ERROR] Evaluation image missing: {image_path}")
+        return None
+
+    try:
+        base64_image = _encode_image(image_path)
+    except Exception as e:
+        print(f"[ERROR] Base64 image encoding failed for evaluation: {e}")
+        return None
+
+    prompt_path = os.path.join(PROJECT_ROOT, "chandelier_prompt_with_designer_rules.json")
+    if item_name.lower() == "chandelier" and os.path.exists(prompt_path):
+        try:
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                system_prompt = f.read()
+        except Exception as e:
+            print(f"[WARN] Failed to read chandelier prompt file: {e}")
+            system_prompt = (
+                "You are a strict image quality checker. Return only JSON with "
+                "is_beautiful, aesthetic_score, failed_step, and reason."
+            )
+    else:
+        system_prompt = (
+            "You are a strict image quality checker for premium interior photos. "
+            "Reject blurry, low quality, watermarked, cluttered, badly lit, or off-topic images. "
+            "Return only JSON with is_beautiful, aesthetic_score, failed_step, and reason."
+        )
+
+    payload = {
+        "model": VISION_LLM_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Evaluate this image using the quality guidelines and return only the required JSON.",
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                    },
+                ],
+            },
+        ],
+        "max_tokens": 500,
+        "temperature": 0.1,
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    for attempt in range(3):
+        for endpoint in VISION_LLM_ENDPOINTS:
+            try:
+                resp = requests.post(endpoint, headers=headers, json=payload, timeout=VISION_LLM_TIMEOUT)
+                if resp.status_code != 200:
+                    print(f"[WARN] Vision LLM returned status code {resp.status_code}")
+                    continue
+
+                data = resp.json()
+                choices = data.get("choices", [])
+                if not choices:
+                    continue
+
+                raw = choices[0]["message"]["content"]
+                blob = _extract_json_blob(raw)
+                if not blob:
+                    print(f"[WARN] Evaluation LLM response had no JSON object: {raw[:200]}")
+                    continue
+
+                try:
+                    parsed = json.loads(blob)
+                except json.JSONDecodeError as exc:
+                    print(f"[WARN] Evaluation LLM JSON parse failed ({exc}): {blob[:200]}")
+                    continue
+
+                if "is_beautiful" in parsed and "reason" in parsed:
+                    return parsed
+                print(f"[WARN] Evaluation LLM JSON missing required fields: {parsed}")
+            except requests.RequestException as e:
+                print(f"[WARN] Vision LLM request exception: {e}")
+                continue
+
+    print("[ERROR] Photo evaluation via Vision LLM failed")
+    return None
